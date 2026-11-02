@@ -114,3 +114,7 @@ Layout:
 - Uses private fields of GNOME Shell 46 (quick settings items); each access is guarded, and a
   missing one only hides that control. Check again after a GNOME upgrade.
 - The design shows Lucide icons; the extension uses GNOME's symbolic icons.
+
+## License
+
+[MIT](LICENSE)
