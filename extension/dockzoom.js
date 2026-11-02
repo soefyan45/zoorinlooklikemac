@@ -5,6 +5,10 @@
 //
 // The taskbar clips its icons to the dock, so icons grow around their center and the
 // maximum scale is kept small enough to fit the dock's padding.
+//
+// It also gives the dock the glass look of the design (style class zorin-notch-dock: edge on
+// every side, soft shadow, inner highlight). The background color itself stays with
+// zorin-taskbar, which sets it inline.
 
 import Clutter from 'gi://Clutter';
 import GLib from 'gi://GLib';
@@ -21,6 +25,11 @@ const EASE_MS = 90;
 const WATCH_MS = 60;
 const WAIT_MS = 500;
 const WAIT_TRIES = 60;
+const DOCK_STYLE_CLASS = 'zorin-notch-dock';
+// Horizontal room around each icon. zorin-taskbar uses 4 px margin + 8 px padding per side;
+// the vertical padding (which sets the icon size) is kept as is.
+const ICON_MARGIN_X = 1;
+const ICON_PADDING_X = 3;
 
 // Pointer position as the shell's input sees it (follows virtual devices too)
 function pointerPosition() {
@@ -32,6 +41,8 @@ function pointerPosition() {
 export class DockZoom {
     constructor() {
         this._watched = new Set();
+        this._styled = new Set();
+        this._compacted = new Map(); // icon -> its original inline styles
         this._emitter = null;
         this._waitId = 0;
         // zorin-taskbar may be enabled after us at login; wait for it
@@ -66,10 +77,20 @@ export class DockZoom {
     _attach() {
         this._detach();
         for (const panel of this._emitter.panels ?? []) {
+            panel.add_style_class_name?.(DOCK_STYLE_CLASS);
+            this._styled.add(panel);
             const taskbar = panel.taskbar;
             const target = taskbar?._scrollView;
             if (!target)
                 continue;
+            this._compactAll(taskbar);
+            taskbar._box?.connectObject('child-added', () => {
+                // The taskbar styles a new icon while adding it; compact it afterwards
+                GLib.idle_add(GLib.PRIORITY_DEFAULT, () => {
+                    this._compactAll(taskbar);
+                    return GLib.SOURCE_REMOVE;
+                });
+            }, this);
             target.reactive = true;
             target.connectObject(
                 'motion-event', (_actor, event) => {
@@ -92,6 +113,20 @@ export class DockZoom {
             return containers.map(c => c.child).filter(Boolean);
         } catch {
             return [];
+        }
+    }
+
+    // Narrower dock: less horizontal margin and padding around each icon
+    _compactAll(taskbar) {
+        for (const icon of this._icons(taskbar)) {
+            const container = icon._iconContainer;
+            if (!container || this._compacted.has(icon))
+                continue;
+            const original = {icon: icon.get_style(), container: container.get_style()};
+            const vertical = /padding:\s*([\d.]+)px/.exec(original.container ?? '')?.[1] ?? '8';
+            icon.set_style(`padding: 0 ${ICON_MARGIN_X}px;`);
+            container.set_style(`padding: ${vertical}px ${ICON_PADDING_X}px;`);
+            this._compacted.set(icon, original);
         }
     }
 
@@ -158,6 +193,7 @@ export class DockZoom {
         for (const {taskbar, target} of this._watched) {
             // The taskbar may already be gone when its panels were rebuilt
             try {
+                taskbar._box?.disconnectObject(this);
                 target.disconnectObject(this);
                 for (const icon of this._icons(taskbar)) {
                     icon.remove_transition('scale-x');
@@ -167,6 +203,19 @@ export class DockZoom {
             } catch {}
         }
         this._watched.clear();
+        for (const [icon, original] of this._compacted) {
+            try {
+                icon.set_style(original.icon);
+                icon._iconContainer?.set_style(original.container);
+            } catch {}
+        }
+        this._compacted.clear();
+        for (const panel of this._styled) {
+            try {
+                panel.remove_style_class_name?.(DOCK_STYLE_CLASS);
+            } catch {}
+        }
+        this._styled.clear();
     }
 
     destroy() {

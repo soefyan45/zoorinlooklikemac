@@ -553,3 +553,16 @@
     font-weight: 600;
     color: #06201d;
 }
+
+/* Dock glass (Pego dock 7zy0knoo): edge #FFFFFF47 on every side, radius 20, soft drop
+   shadow. Added to zorin-taskbar's panel by dockzoom.js; the background color stays the
+   taskbar's own (set inline), its top-only border is turned off in the dock preset. */
+.zorin-notch-dock {
+    /* Minimal glass: a light tint of $dock-glass painted as a gradient (the taskbar's own
+       background color is inline and theme-based), a hairline edge and no shadow */
+    background-gradient-direction: vertical;
+    background-gradient-start: rgba(36, 48, 68, 0.36);
+    background-gradient-end: rgba(20, 30, 48, 0.36);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 20px;
+}
