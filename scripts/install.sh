@@ -21,6 +21,9 @@ MODE="copy"
 
 "$REPO_DIR/scripts/backup.sh"
 
+# Settings schema of the preferences window
+glib-compile-schemas --strict "$REPO_DIR/extension/schemas"
+
 mkdir -p "$(dirname "$TARGET")"
 if [[ -L "$TARGET" ]]; then
     rm "$TARGET"

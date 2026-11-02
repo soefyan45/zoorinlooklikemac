@@ -13,6 +13,8 @@
 // background is made transparent by the dock preset.
 
 import Clutter from 'gi://Clutter';
+import Gio from 'gi://Gio';
+import GObject from 'gi://GObject';
 import GLib from 'gi://GLib';
 import Graphene from 'gi://Graphene';
 import St from 'gi://St';
@@ -46,8 +48,28 @@ function pointerPosition() {
     return [coords.x, coords.y];
 }
 
+// Dock preferences of this extension -> zorin-taskbar settings. Written only when the user
+// changes them in the preferences window, so the taskbar keeps any other configuration.
+const TASKBAR_SCHEMA = 'org.gnome.shell.extensions.zorin-taskbar';
+const AUTOHIDE_BEHAVIOUR = {
+    'all-windows': 'ALL_WINDOWS',
+    'focused-window': 'FOCUSED_WINDOWS',
+    'maximized-window': 'MAXIMIZED_WINDOWS',
+};
+
+function taskbarSettings() {
+    const schema = Gio.SettingsSchemaSource.get_default()?.lookup(TASKBAR_SCHEMA, true);
+    return schema ? new Gio.Settings({settings_schema: schema}) : null;
+}
+
 export class DockZoom {
-    constructor() {
+    /**
+     * @param {Gio.Settings} settings - the extension's settings (dock-* keys)
+     */
+    constructor(settings = null) {
+        this._settings = settings;
+        this._taskbarSettings = taskbarSettings();
+        this._settings?.connectObject('changed', (_s, key) => this._onSettingsChanged(key), this);
         this._watched = new Set();
         this._styled = new Set();
         this._compacted = new Map(); // icon -> its original inline styles
@@ -66,6 +88,46 @@ export class DockZoom {
                 return this._stopWaiting();
             });
         }
+    }
+
+    _onSettingsChanged(key) {
+        const taskbar = this._taskbarSettings;
+        switch (key) {
+        case 'dock-autohide': {
+            const mode = this._settings.get_string('dock-autohide');
+            if (!taskbar)
+                break;
+            taskbar.set_boolean('intellihide', mode !== 'off');
+            if (AUTOHIDE_BEHAVIOUR[mode])
+                taskbar.set_string('intellihide-behaviour', AUTOHIDE_BEHAVIOUR[mode]);
+            break;
+        }
+        case 'dock-size':
+            taskbar?.set_int('panel-size', this._settings.get_int('dock-size'));
+            break;
+        case 'dock-margin':
+            taskbar?.set_int('panel-margin', this._settings.get_int('dock-margin'));
+            break;
+        case 'dock-zoom':
+            if (!this._zoomEnabled)
+                this._watched.forEach(({taskbar: t}) => this._reset(t));
+            break;
+        case 'dock-glass-opacity':
+            this._plates.forEach(({plate}) => this._stylePlate(plate));
+            break;
+        }
+    }
+
+    get _zoomEnabled() {
+        return this._settings?.get_boolean('dock-zoom') ?? true;
+    }
+
+    // Glass tint with the opacity from the preferences (the CSS class holds edge and radius)
+    _stylePlate(plate) {
+        const alpha = (this._settings?.get_double('dock-glass-opacity') ?? 0.36).toFixed(2);
+        plate.set_style(alpha > 0
+            ? `background-gradient-start: rgba(36, 48, 68, ${alpha}); background-gradient-end: rgba(20, 30, 48, ${alpha});`
+            : 'background-gradient-direction: none; border-color: transparent;');
     }
 
     _stopWaiting() {
@@ -138,9 +200,13 @@ export class DockZoom {
             return;
         const plate = new St.Widget({style_class: 'zorin-notch-dock-plate', reactive: false});
         uiGroup.insert_child_below(plate, top);
-        this._plates.set(panel, plate);
+        this._stylePlate(plate);
+        // Auto hide slides the panel box out of the screen: the plate slides with it
+        const binding = anchor.bind_property('translation-y', plate, 'translation-y',
+            GObject.BindingFlags.SYNC_CREATE);
+        this._plates.set(panel, {plate, binding, anchor});
 
-        const sync = () => this._syncPlate(plate, taskbar);
+        const sync = () => this._syncPlate(plate, taskbar, anchor);
         // Icons coming and going resize the box; the dock re-centers by moving the panel
         taskbar._box.connectObject('notify::allocation', sync, 'notify::mapped', sync, this);
         panel.connectObject('notify::allocation', sync, this);
@@ -148,9 +214,9 @@ export class DockZoom {
         sync();
     }
 
-    _syncPlate(plate, taskbar) {
+    _syncPlate(plate, taskbar, anchor) {
         const box = taskbar._box;
-        if (!box?.mapped || !box.width) {
+        if (!box?.mapped || !box.width || !anchor.visible) {
             plate.hide();
             return;
         }
@@ -159,7 +225,9 @@ export class DockZoom {
         const [w, h] = box.get_transformed_size();
         const iconSize = (taskbar.iconSize || 24) * scale;
         const height = Math.round(iconSize + 2 * PLATE_PAD_Y * scale);
-        plate.set_position(Math.round(x - PLATE_PAD_X * scale), Math.round(y + (h - height) / 2));
+        // The box position includes the auto-hide slide, which the plate gets from its binding
+        const baseY = y - anchor.translation_y;
+        plate.set_position(Math.round(x - PLATE_PAD_X * scale), Math.round(baseY + (h - height) / 2));
         plate.set_size(Math.round(w + 2 * PLATE_PAD_X * scale), height);
         plate.show();
     }
@@ -179,6 +247,8 @@ export class DockZoom {
     }
 
     _magnify(taskbar, pointerX) {
+        if (!this._zoomEnabled)
+            return;
         trace(`dock zoom: motion x=${Math.round(pointerX)} seat=${pointerPosition().map(Math.round)}`);
         this._watch(taskbar);
         for (const icon of this._icons(taskbar)) {
@@ -258,10 +328,11 @@ export class DockZoom {
             } catch {}
         }
         this._compacted.clear();
-        for (const [panel, plate] of this._plates) {
+        for (const [panel, {plate, binding, anchor}] of this._plates) {
             try {
+                binding.unbind();
                 panel.disconnectObject(this);
-                (panel.panelBox ?? panel).disconnectObject(this);
+                anchor.disconnectObject(this);
             } catch {}
             plate.destroy();
         }
@@ -275,6 +346,8 @@ export class DockZoom {
     }
 
     destroy() {
+        this._settings?.disconnectObject(this);
+        this._taskbarSettings = null;
         if (this._waitId) {
             GLib.source_remove(this._waitId);
             this._waitId = 0;

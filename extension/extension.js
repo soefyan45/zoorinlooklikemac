@@ -21,14 +21,17 @@ export default class ZorinNotchExtension extends Extension {
     enable() {
         console.log(LOG_PREFIX, `enable (dry-run: ${DRY_RUN})`);
         try {
-            this._notch = new Notch();
+            this._notch = new Notch({
+                settings: this.getSettings(),
+                openPreferences: () => this.openPreferences(),
+            });
         } catch (e) {
             console.error(LOG_PREFIX, 'failed to create the notch', e);
             this._notch?.destroy();
             this._notch = null;
         }
         try {
-            this._dockZoom = new DockZoom();
+            this._dockZoom = new DockZoom(this.getSettings());
         } catch (e) {
             console.error(LOG_PREFIX, 'failed to set up dock zoom', e);
             this._dockZoom = null;

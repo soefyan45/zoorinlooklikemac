@@ -10,6 +10,7 @@ LOG_DIR="$REPO_DIR/logs"
 SANDBOX="$(mktemp -d -t zorin-notch-nested-XXXXXX)"
 
 mkdir -p "$LOG_DIR" "$SANDBOX/config" "$SANDBOX/data/gnome-shell/extensions"
+glib-compile-schemas --strict "$REPO_DIR/extension/schemas"
 LOG_FILE="$LOG_DIR/nested-$(date +%Y%m%d-%H%M%S).log"
 
 # Expose only this extension to the nested shell

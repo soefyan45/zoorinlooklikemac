@@ -2,3 +2,5 @@
 backups/
 # Nested-shell logs and screenshots (may contain local network names)
 logs/
+# Compiled at install/test time
+extension/schemas/gschemas.compiled

@@ -243,6 +243,48 @@ async function testAgents(notch, shotDir) {
     }
 }
 
+// Preferences reach the notch and the dock (isolated dconf in the nested session)
+async function testSettings(extension, notch) {
+    const settings = extension.getSettings();
+    notch.setState(State.IDLE);
+    await wait(500);
+
+    settings.set_int('idle-width', 200);
+    await wait(SETTLE_MS);
+    check('idle width follows the preferences', Math.round(notch._width.value) === 200, notch.debugSize);
+    settings.reset('idle-width');
+
+    const taskbar = new Gio.Settings({schema_id: 'org.gnome.shell.extensions.zorin-taskbar'});
+    settings.set_string('dock-autohide', 'all-windows');
+    await wait(300);
+    check('auto hide turns on zorin-taskbar intellihide',
+        taskbar.get_boolean('intellihide') && taskbar.get_string('intellihide-behaviour') === 'ALL_WINDOWS',
+        `${taskbar.get_boolean('intellihide')} ${taskbar.get_string('intellihide-behaviour')}`);
+    settings.set_string('dock-autohide', 'off');
+    await wait(300);
+    check('auto hide off turns intellihide off', !taskbar.get_boolean('intellihide'));
+
+    settings.set_int('dock-margin', 6);
+    await wait(300);
+    check('dock margin goes to zorin-taskbar', taskbar.get_int('panel-margin') === 6, `${taskbar.get_int('panel-margin')}`);
+    settings.reset('dock-margin');
+
+    const zoom = extension._dockZoom;
+    const [entry] = zoom?._plates?.values() ?? [];
+    if (entry) {
+        entry.anchor.translation_y = 30;
+        await wait(100);
+        check('glass plate slides with the hiding dock', entry.plate.translation_y === 30, `${entry.plate.translation_y}`);
+        entry.anchor.translation_y = 0;
+        settings.set_double('dock-glass-opacity', 0.6);
+        await wait(100);
+        check('glass opacity follows the preferences', (entry.plate.get_style() ?? '').includes('0.60'), entry.plate.get_style());
+        settings.reset('dock-glass-opacity');
+    } else {
+        check('glass plate exists', false, 'no plate (run with DOCK=1)');
+    }
+}
+
 function sendNotification(title, body, {urgency = MessageTray.Urgency.NORMAL, action = null} = {}) {
     const source = new MessageTray.Source({title: 'Uji Notch', iconName: 'mail-unread-symbolic'});
     Main.messageTray.add(source);
@@ -423,6 +465,7 @@ export async function runSelfTest(extension) {
         await wait(500);
         await testDockZoom(extension, shotDir);
         await testAgents(notch, shotDir);
+        await testSettings(extension, notch);
 
         notch.freezePointer(false);
         notch.setState(State.IDLE);

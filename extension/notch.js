@@ -57,6 +57,8 @@ const WIDTH_SPRING = {stiffness: 260, damping: 30};
 const HEIGHT_SPRING = {stiffness: 340, damping: 34};
 
 const POINTER_POLL_MS = 50;
+// The hover line is this much larger than the standby line (design: 120×4 -> 160×6)
+const HOVER_GROW = [40, 2];
 // Extra room around the peeking notch before it falls back to the hover line
 const PEEK_MARGIN = 14;
 // Area around the top center where an approaching pointer turns the line into the hover line
@@ -109,9 +111,14 @@ function scaleFactor() {
 }
 
 export class Notch {
-    constructor() {
+    /**
+     * @param {object} options - {settings: Gio.Settings of the extension, openPreferences()}
+     */
+    constructor({settings, openPreferences}) {
+        this._settings = settings;
+        this._openPreferences = openPreferences;
         this._state = State.IDLE;
-        const [w, h] = StateSize.idle;
+        const [w, h] = this._sizeOf(State.IDLE);
         this._width = new Spring(w, WIDTH_SPRING);
         this._height = new Spring(h, HEIGHT_SPRING);
         this._grab = null;
@@ -122,6 +129,7 @@ export class Notch {
 
         this._buildActors();
         this._buildSources();
+        this._settings?.connectObject('changed', (_s, key) => this._onSettingsChanged(key), this);
 
         this._ticker = new Clutter.Timeline({actor: this.actor, duration: 1000, repeat_count: -1});
         this._ticker.connect('new-frame', () => this._tick(Math.min(this._ticker.get_delta(), 50) / 1000));
@@ -170,6 +178,7 @@ export class Notch {
             showApps: () => this._closeThen(() => Main.overview.showApps()),
             search: () => this.setState(State.SEARCH),
             openSettings: () => this._closeThen(() => this._bridge.openSettings()),
+            openPreferences: () => this._closeThen(() => this._openPreferences?.()),
             openWifiSettings: () => this._closeThen(() => this._bridge.openSettings('gnome-wifi-panel.desktop')),
             lockScreen: () => this._closeThen(() => this._power.run('lock')),
             openPower: () => this.setState(State.POWER),
@@ -218,7 +227,10 @@ export class Notch {
         });
         this._agents = new AgentTracker({
             onChange: () => this._onAgentsChanged(),
-            onPopup: entry => this._queuePopup({agentEntry: entry}),
+            onPopup: entry => {
+                if (this._settings?.get_boolean('show-agents') ?? true)
+                    this._queuePopup({agentEntry: entry});
+            },
         });
         this._powerView = new PowerView(power, () =>
             this._battery?.present ? this._battery.percentage : null);
@@ -289,9 +301,9 @@ export class Notch {
         if (!this._activityRow)
             return;
         this._activityRow.update(this._agents.active);
-        if (this._state === State.IDLE && this._agents.hasActive)
+        if (this._state === State.IDLE && this._agentsShown())
             this.setState(State.ACTIVITY);
-        else if (this._state === State.ACTIVITY && !this._agents.hasActive)
+        else if (this._state === State.ACTIVITY && !this._agentsShown())
             this.setState(State.IDLE);
     }
 
@@ -347,7 +359,7 @@ export class Notch {
 
         this._notificationView.show(notification);
         this.setState(State.NOTIFICATION);
-        this._armAutoClose(Timing.notificationMs, () => {
+        this._armAutoClose(this._seconds('notification-seconds', Timing.notificationMs), () => {
             if (notification.is_transient)
                 notification.destroy(MessageTray.NotificationDestroyedReason.EXPIRED);
         });
@@ -355,6 +367,68 @@ export class Notch {
 
     get state() {
         return this._state;
+    }
+
+    // Size of a state; the standby line, its hover line and the notification follow settings
+    _sizeOf(state) {
+        const settings = this._settings;
+        if (!settings)
+            return StateSize[state];
+        const idle = [settings.get_int('idle-width'), settings.get_int('idle-height')];
+        switch (state) {
+        case State.IDLE:
+            return idle;
+        case State.HOVER:
+            return [idle[0] + HOVER_GROW[0], idle[1] + HOVER_GROW[1]];
+        case State.NOTIFICATION:
+            return [settings.get_int('notification-width'), StateSize.notification[1]];
+        default:
+            return StateSize[state];
+        }
+    }
+
+    // Click target around the standby line, never smaller than the design's 200 × 12
+    _hitArea() {
+        const [w, h] = this._sizeOf(State.IDLE);
+        return [Math.max(IdleHitArea[0], w + 80), Math.max(IdleHitArea[1], h + 8)];
+    }
+
+    // $notch-panel with the opacity from the preferences
+    _panelColor() {
+        const opacity = this._settings?.get_double('panel-opacity');
+        if (opacity === undefined)
+            return Color.notchPanel;
+        const alpha = Math.round(opacity * 255).toString(16).padStart(2, '0');
+        return `${Color.notchPanel.slice(0, 7)}${alpha}`;
+    }
+
+    _seconds(key, fallbackMs) {
+        return this._settings ? this._settings.get_int(key) * 1000 : fallbackMs;
+    }
+
+    // Coding agents shown only when enabled in the preferences
+    _agentsShown() {
+        return (this._settings?.get_boolean('show-agents') ?? true) && !!this._agents?.hasActive;
+    }
+
+    _onSettingsChanged(key) {
+        switch (key) {
+        case 'idle-width':
+        case 'idle-height':
+        case 'notification-width': {
+            const [w, h] = this._sizeOf(this._state);
+            this._width.target = w;
+            this._height.target = h;
+            this._wake();
+            break;
+        }
+        case 'show-agents':
+            this._onAgentsChanged();
+            break;
+        case 'panel-opacity':
+            this._area.queue_repaint();
+            break;
+        }
     }
 
     get debugSize() {
@@ -368,7 +442,7 @@ export class Notch {
 
     setState(state) {
         // While an agent works the notch rests on its activity instead of the idle line
-        if (state === State.IDLE && this._agents?.hasActive)
+        if (state === State.IDLE && this._agentsShown())
             state = State.ACTIVITY;
         if (state === this._state)
             return;
@@ -376,13 +450,13 @@ export class Notch {
         const previous = this._state;
         trace(`state ${previous} -> ${state}`);
         this._state = state;
-        const [w, h] = StateSize[state];
+        const [w, h] = this._sizeOf(state);
         this._width.target = w;
         this._height.target = h;
 
         this._clearAutoClose();
         if (state === State.STATUS)
-            this._armAutoClose(Timing.statusAutoCloseMs);
+            this._armAutoClose(this._seconds('status-seconds', Timing.statusAutoCloseMs));
 
         this._setWifiRefresh(state === State.WIFI);
         if (state === State.WIFI)
@@ -435,7 +509,7 @@ export class Notch {
             return;
 
         const scale = scaleFactor();
-        const width = (StateSize[this._state][0] - 2 * padding.x) * scale;
+        const width = (this._sizeOf(this._state)[0] - 2 * padding.x) * scale;
         const [, natural] = layer.get_preferred_height(width);
         this._height.target = padding.top + Math.ceil(natural / scale) + padding.bottom;
         this._wake();
@@ -576,7 +650,7 @@ export class Notch {
 
         const dx = Math.abs(px - (monitor.x + monitor.width / 2));
         const dy = py - monitor.y;
-        if (this._agents?.hasActive) {
+        if (this._agentsShown()) {
             this.setState(State.ACTIVITY);
             return;
         }
@@ -586,7 +660,7 @@ export class Notch {
     }
 
     _wake() {
-        if (!St.Settings.get().enable_animations) {
+        if (!St.Settings.get().enable_animations || !(this._settings?.get_boolean('animations') ?? true)) {
             this._width.snap();
             this._height.snap();
             this._relayout();
@@ -642,7 +716,7 @@ export class Notch {
             return;
 
         const scale = scaleFactor();
-        const [hitW, hitH] = IdleHitArea;
+        const [hitW, hitH] = this._hitArea();
         let width = Math.ceil(Math.max(this._width.value, this._width.target, hitW) * scale);
         let height = Math.ceil(Math.max(this._height.value, this._height.target, hitH) * scale);
         if (this._ticker?.is_playing() && this._box) {
@@ -679,7 +753,7 @@ export class Notch {
 
         for (const state of EXPANDED) {
             const padding = VIEW_PADDING[state];
-            const viewWidth = Math.round((StateSize[state][0] - 2 * padding.x) * scale);
+            const viewWidth = Math.round((this._sizeOf(state)[0] - 2 * padding.x) * scale);
             this._layers[state].set_width(viewWidth);
             this._layers[state].set_position(Math.round((width - viewWidth) / 2), Math.round(padding.top * scale));
         }
@@ -695,7 +769,7 @@ export class Notch {
             drawNotch(cr, areaWidth, this._width.value * scale, Math.max(0, this._height.value) * scale, {
                 scale,
                 ringColor: this._state === State.IDLE ? Color.notchIdleEdge : Color.notchGlassEdge,
-                panelColor: this._state === State.NOTIFICATION ? Color.notchGlass : Color.notchPanel,
+                panelColor: this._state === State.NOTIFICATION ? Color.notchGlass : this._panelColor(),
                 edgeColor: this._state === State.AGENT ? Color.aiEdge : Color.notchGlassEdge,
                 expanded: EXPANDED.has(this._state),
                 showCamera: false,
@@ -723,6 +797,7 @@ export class Notch {
         this._ticker.stop();
         this._ticker = null;
 
+        this._settings?.disconnectObject(this);
         Main.layoutManager.disconnectObject(this);
         global.display.disconnectObject(this);
         St.ThemeContext.get_for_stage(global.stage).disconnectObject(this);

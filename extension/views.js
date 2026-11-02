@@ -214,6 +214,11 @@ export class PanelView {
         this._bell = roundButton('notification-symbolic', 'Notifikasi', actions.openNotifications);
         this._bell.child.fallback_icon_name = 'preferences-system-notifications-symbolic';
         right.add_child(this._bell);
+        // Zorin Notch preferences (dock and notch), next to GNOME Settings
+        const prefs = roundButton('preferences-desktop-appearance-symbolic', 'Pengaturan Zorin Notch',
+            actions.openPreferences);
+        prefs.child.fallback_icon_name = 'emblem-system-symbolic';
+        right.add_child(prefs);
         right.add_child(roundButton('emblem-system-symbolic', 'Pengaturan', actions.openSettings));
         right.add_child(roundButton('system-lock-screen-symbolic', 'Kunci layar', actions.lockScreen));
         right.add_child(roundButton('system-shutdown-symbolic', 'Daya', actions.openPower));

@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist>
+  <enum id="org.gnome.shell.extensions.zorin-notch.DockAutohide">
+    <value nick="off" value="0"/>
+    <value nick="all-windows" value="1"/>
+    <value nick="focused-window" value="2"/>
+    <value nick="maximized-window" value="3"/>
+  </enum>
+
+  <schema id="org.gnome.shell.extensions.zorin-notch" path="/org/gnome/shell/extensions/zorin-notch/">
+    <!-- Dock (applied to zorin-taskbar's own settings) -->
+    <key name="dock-autohide" enum="org.gnome.shell.extensions.zorin-notch.DockAutohide">
+      <default>'off'</default>
+      <summary>Hide the dock when windows overlap it</summary>
+    </key>
+    <key name="dock-size" type="i">
+      <range min="32" max="64"/>
+      <default>40</default>
+      <summary>Dock height in pixels (sets the icon size)</summary>
+    </key>
+    <key name="dock-margin" type="i">
+      <range min="0" max="24"/>
+      <default>2</default>
+      <summary>Space between the dock and the bottom of the screen</summary>
+    </key>
+    <key name="dock-zoom" type="b">
+      <default>true</default>
+      <summary>Magnify dock icons under the pointer</summary>
+    </key>
+    <key name="dock-glass-opacity" type="d">
+      <range min="0" max="1"/>
+      <default>0.36</default>
+      <summary>Opacity of the dock's glass plate</summary>
+    </key>
+
+    <!-- Notch behaviour -->
+    <key name="notification-seconds" type="i">
+      <range min="2" max="30"/>
+      <default>5</default>
+      <summary>How long a notification stays in the notch</summary>
+    </key>
+    <key name="status-seconds" type="i">
+      <range min="2" max="30"/>
+      <default>5</default>
+      <summary>How long the clicked status stays open</summary>
+    </key>
+    <key name="show-agents" type="b">
+      <default>true</default>
+      <summary>Show coding agents (Claude Code, opencode) in the notch</summary>
+    </key>
+
+    <!-- Notch look -->
+    <key name="idle-width" type="i">
+      <range min="40" max="300"/>
+      <default>120</default>
+      <summary>Width of the notch line on standby</summary>
+    </key>
+    <key name="idle-height" type="i">
+      <range min="2" max="8"/>
+      <default>4</default>
+      <summary>Height of the notch line on standby</summary>
+    </key>
+    <key name="notification-width" type="i">
+      <range min="320" max="640"/>
+      <default>420</default>
+      <summary>Width of the notch when it shows a notification</summary>
+    </key>
+    <key name="panel-opacity" type="d">
+      <range min="0.4" max="1"/>
+      <default>0.78</default>
+      <summary>Opacity of the expanded notch panel</summary>
+    </key>
+    <key name="animations" type="b">
+      <default>true</default>
+      <summary>Animate the notch (follows GNOME's own animation setting too)</summary>
+    </key>
+  </schema>
+</schemalist>
