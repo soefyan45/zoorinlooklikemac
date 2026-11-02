@@ -1,0 +1,799 @@
+// Content of the expanded notch: full panel (06), Wi-Fi settings (09), notification (05) and
+// notification list (07). Layout and copy follow the Pego frames.
+
+import Clutter from 'gi://Clutter';
+import GLib from 'gi://GLib';
+import GObject from 'gi://GObject';
+import Shell from 'gi://Shell';
+import St from 'gi://St';
+
+import {Slider} from 'resource:///org/gnome/shell/ui/slider.js';
+
+import {relativeTime} from './messages.js';
+
+const MAX_OTHER_NETWORKS = 3;
+const MAX_LIST_ROWS = 4;
+// Horizontal drag past this distance dismisses a notification row (Pego 07: "geser kanan")
+const SWIPE_DISMISS_PX = 120;
+
+function notificationIcon(notification) {
+    const gicon = notification.gicon ?? notification.source?.icon ?? null;
+    const iconName = notification.iconName || notification.source?.iconName || 'dialog-information-symbolic';
+    return gicon
+        ? new St.Icon({gicon, style_class: 'zorin-notch-notif-glyph'})
+        : new St.Icon({icon_name: iconName, style_class: 'zorin-notch-notif-glyph'});
+}
+
+function notificationIconBox(notification) {
+    return new St.Bin({style_class: 'zorin-notch-notif-icon', child: notificationIcon(notification)});
+}
+
+// Text in notifications may contain markup; show it as plain text
+function plain(text) {
+    return (text ?? '').replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
+}
+
+function label(text, styleClass, props = {}) {
+    return new St.Label({text, style_class: styleClass, y_align: Clutter.ActorAlign.CENTER, ...props});
+}
+
+function icon(iconName, styleClass = 'zorin-notch-icon') {
+    return new St.Icon({icon_name: iconName, style_class: styleClass});
+}
+
+function roundButton(iconName, accessibleName, onClick) {
+    const button = new St.Button({
+        style_class: 'zorin-notch-round-button',
+        child: icon(iconName),
+        accessible_name: accessibleName,
+        can_focus: true,
+    });
+    button.connect('clicked', onClick);
+    return button;
+}
+
+function pillButton(iconName, text, onClick) {
+    const box = new St.BoxLayout({style_class: 'zorin-notch-pill-content'});
+    box.add_child(icon(iconName));
+    box.add_child(label(text, 'zorin-notch-pill-label'));
+    const button = new St.Button({style_class: 'zorin-notch-pill-button', child: box, can_focus: true});
+    button.connect('clicked', onClick);
+    return button;
+}
+
+// Clock left of the camera, network and battery right of it (Pego "Status" row)
+export class StatusRow {
+    constructor(styleClass = 'zorin-notch-status') {
+        this.actor = new St.BoxLayout({style_class: styleClass, x_expand: true});
+        this._left = label('', 'zorin-notch-clock', {x_expand: true});
+        this._networkIcon = icon('network-wireless-symbolic', 'zorin-notch-status-icon');
+        this._batteryLabel = label('', 'zorin-notch-battery');
+        this._batteryIcon = icon('battery-missing-symbolic', 'zorin-notch-status-icon');
+
+        const right = new St.BoxLayout({style_class: 'zorin-notch-status-right', x_align: Clutter.ActorAlign.END});
+        right.add_child(this._networkIcon);
+        right.add_child(this._batteryLabel);
+        right.add_child(this._batteryIcon);
+
+        this.actor.add_child(this._left);
+        this.actor.add_child(right);
+    }
+
+    update({clock, networkIcon, battery}) {
+        this._left.text = clock;
+        this._networkIcon.visible = !!networkIcon;
+        if (networkIcon)
+            this._networkIcon.icon_name = networkIcon;
+        this._batteryLabel.visible = this._batteryIcon.visible = !!battery;
+        if (battery) {
+            this._batteryLabel.text = `${battery.percentage}%`;
+            this._batteryIcon.icon_name = battery.iconName;
+        }
+    }
+}
+
+// Quick setting tile: the circle toggles, the name opens details (or toggles too)
+class Tile {
+    constructor(control, title, fallbackIcon, onOpen) {
+        this._control = control;
+        this._title = title;
+        this._fallbackIcon = fallbackIcon;
+
+        this.actor = new St.BoxLayout({style_class: 'zorin-notch-tile', x_expand: true});
+        this._circle = new St.Button({
+            style_class: 'zorin-notch-tile-circle',
+            child: icon(fallbackIcon),
+            accessible_name: title,
+            can_focus: true,
+        });
+        this._circle.connect('clicked', () => control.toggle());
+
+        const text = new St.BoxLayout({vertical: true, y_align: Clutter.ActorAlign.CENTER});
+        this._titleLabel = label(title, 'zorin-notch-tile-title');
+        this._subtitleLabel = label('', 'zorin-notch-tile-subtitle');
+        text.add_child(this._titleLabel);
+        text.add_child(this._subtitleLabel);
+        this._name = new St.Button({child: text, x_expand: true, can_focus: true, x_align: Clutter.ActorAlign.START});
+        this._name.connect('clicked', () => (onOpen ? onOpen() : control.toggle()));
+
+        this.actor.add_child(this._circle);
+        this.actor.add_child(this._name);
+    }
+
+    update() {
+        const {checked, available} = this._control;
+        this.actor.visible = available;
+        if (checked)
+            this._circle.add_style_pseudo_class('checked');
+        else
+            this._circle.remove_style_pseudo_class('checked');
+        this._circle.child.icon_name = this._control.iconName || this._fallbackIcon;
+        this._subtitleLabel.text = this._control.subtitle || (checked ? 'Aktif' : 'Mati');
+    }
+}
+
+// Our slider mirrors GNOME's: both share value and maximum, so dragging ours moves the volume
+class SliderRow {
+    constructor(link, fallbackIcon, accessibleName) {
+        this._link = link;
+        this._fallbackIcon = fallbackIcon;
+        this._binding = null;
+
+        this.actor = new St.BoxLayout({style_class: 'zorin-notch-slider-row'});
+        this._icon = icon(fallbackIcon);
+        this._slider = new Slider(0);
+        this._slider.add_style_class_name('zorin-notch-slider');
+        this._slider.x_expand = true;
+        this._slider.accessible_name = accessibleName;
+        this._value = label('', 'zorin-notch-slider-value');
+        this._slider.connect('notify::value', () => this._syncValue());
+
+        this.actor.add_child(this._icon);
+        this.actor.add_child(this._slider);
+        this.actor.add_child(this._value);
+    }
+
+    update() {
+        const source = this._link.slider;
+        this.actor.visible = this._link.available;
+        if (!source)
+            return;
+
+        if (this._binding?.source !== source) {
+            this._binding?.unbind();
+            this._slider.maximum_value = source.maximum_value;
+            this._binding = source.bind_property('value', this._slider, 'value',
+                GObject.BindingFlags.BIDIRECTIONAL | GObject.BindingFlags.SYNC_CREATE);
+        }
+        this._icon.icon_name = this._link.iconName || this._fallbackIcon;
+        this._syncValue();
+    }
+
+    _syncValue() {
+        this._value.text = `${Math.round(this._slider.value * 100)}%`;
+    }
+
+    destroy() {
+        this._binding?.unbind();
+        this._binding = null;
+    }
+}
+
+/**
+ * Full panel (06): status, quick settings, sliders and actions.
+ * actions: {openWifi, showApps, search, openSettings, lockScreen, openPower}
+ */
+export class PanelView {
+    constructor(bridge, actions) {
+        this.actor = new St.BoxLayout({style_class: 'zorin-notch-panel', vertical: true});
+        this.statusRow = new StatusRow('zorin-notch-status zorin-notch-panel-status');
+
+        const tiles = new St.BoxLayout({style_class: 'zorin-notch-tiles', x_expand: true});
+        tiles.layout_manager.homogeneous = true;
+        this._tiles = [
+            new Tile(bridge.wifi, 'Wi-Fi', 'network-wireless-symbolic', actions.openWifi),
+            new Tile(bridge.bluetooth, 'Bluetooth', 'bluetooth-active-symbolic'),
+            new Tile(bridge.darkMode, 'Mode gelap', 'dark-mode-symbolic'),
+            new Tile(bridge.dnd, 'Senyap', 'notifications-disabled-symbolic'),
+        ];
+        this._tiles.forEach(tile => tiles.add_child(tile.actor));
+
+        const sliders = new St.BoxLayout({style_class: 'zorin-notch-sliders', vertical: true});
+        this._sliders = [
+            new SliderRow(bridge.volume, 'audio-volume-high-symbolic', 'Volume'),
+            new SliderRow(bridge.brightness, 'display-brightness-symbolic', 'Kecerahan'),
+        ];
+        this._sliders.forEach(row => sliders.add_child(row.actor));
+
+        const actionRow = new St.BoxLayout({style_class: 'zorin-notch-actions', x_expand: true});
+        const left = new St.BoxLayout({style_class: 'zorin-notch-actions-group', x_expand: true});
+        left.add_child(pillButton('view-app-grid-symbolic', 'Apps', actions.showApps));
+        left.add_child(pillButton('system-search-symbolic', 'Cari', actions.search));
+        const right = new St.BoxLayout({style_class: 'zorin-notch-actions-group'});
+        // Notification list (07) at any time, not only when the unread dot is shown
+        this._bell = roundButton('notification-symbolic', 'Notifikasi', actions.openNotifications);
+        this._bell.child.fallback_icon_name = 'preferences-system-notifications-symbolic';
+        right.add_child(this._bell);
+        right.add_child(roundButton('emblem-system-symbolic', 'Pengaturan', actions.openSettings));
+        right.add_child(roundButton('system-lock-screen-symbolic', 'Kunci layar', actions.lockScreen));
+        right.add_child(roundButton('system-shutdown-symbolic', 'Daya', actions.openPower));
+        actionRow.add_child(left);
+        actionRow.add_child(right);
+
+        // Tray icons moved out of the dock (filled by TrayBridge); hidden when there are none
+        this.trayRow = new St.BoxLayout({style_class: 'zorin-notch-tray', x_expand: true});
+
+        const body = new St.BoxLayout({style_class: 'zorin-notch-panel-body', vertical: true});
+        body.add_child(tiles);
+        body.add_child(sliders);
+        body.add_child(this.trayRow);
+        body.add_child(actionRow);
+
+        this.actor.add_child(this.statusRow.actor);
+        this.actor.add_child(body);
+    }
+
+    update({trayVisible = false, unread = 0} = {}) {
+        this._tiles.forEach(tile => tile.update());
+        this._sliders.forEach(row => row.update());
+        this.trayRow.visible = trayVisible;
+        this._bell.child.icon_name = unread > 0 ? 'notification-new-symbolic' : 'notification-symbolic';
+    }
+
+    destroy() {
+        this._sliders.forEach(row => row.destroy());
+        this.actor.destroy();
+    }
+}
+
+// Row of the Wi-Fi list and the power menu (Pego "Notch Menu Item")
+function menuItem({iconName, text, meta, trailIcon, accent, bold, onClick}) {
+    const box = new St.BoxLayout({style_class: 'zorin-notch-menu-item-content', x_expand: true});
+    const iconBox = new St.Bin({
+        style_class: `zorin-notch-menu-icon${accent ? ` ${accent}` : ''}`,
+        child: icon(iconName),
+    });
+    box.add_child(iconBox);
+    box.add_child(label(text, `zorin-notch-menu-label${bold ? ' bold' : ''}`, {x_expand: true}));
+    if (meta)
+        box.add_child(label(meta, 'zorin-notch-menu-meta'));
+    if (trailIcon)
+        box.add_child(icon(trailIcon, 'zorin-notch-menu-trail'));
+
+    const button = new St.Button({
+        style_class: 'zorin-notch-menu-item',
+        child: box,
+        x_expand: true,
+        can_focus: true,
+    });
+    button.connect('clicked', onClick);
+    return button;
+}
+
+/**
+ * Wi-Fi settings (09): switch, connected network, other networks and a link to Settings.
+ * actions: {back, openWifiSettings}
+ */
+export class WifiView {
+    constructor(bridge, actions) {
+        this._bridge = bridge;
+        this._actions = actions;
+
+        this.actor = new St.BoxLayout({style_class: 'zorin-notch-wifi', vertical: true});
+        this.statusRow = new StatusRow('zorin-notch-status zorin-notch-wifi-status');
+
+        const head = new St.BoxLayout({style_class: 'zorin-notch-wifi-head'});
+        const back = roundButton('pan-start-symbolic', 'Kembali', actions.back);
+        back.add_style_class_name('small');
+        head.add_child(back);
+        head.add_child(label('Wi-Fi', 'zorin-notch-view-title', {x_expand: true}));
+        this._switch = new St.Button({
+            style_class: 'zorin-notch-switch',
+            child: new St.Widget({style_class: 'zorin-notch-switch-knob'}),
+            accessible_name: 'Wi-Fi',
+            can_focus: true,
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        this._switch.connect('clicked', () => bridge.wifi.toggle());
+        head.add_child(this._switch);
+
+        this._list = new St.BoxLayout({style_class: 'zorin-notch-wifi-list', vertical: true});
+
+        this.actor.add_child(this.statusRow.actor);
+        this.actor.add_child(head);
+        this.actor.add_child(this._list);
+    }
+
+    update() {
+        const enabled = this._bridge.wifi.checked;
+        if (enabled)
+            this._switch.add_style_pseudo_class('checked');
+        else
+            this._switch.remove_style_pseudo_class('checked');
+        this._switch.child.x_align = enabled ? Clutter.ActorAlign.END : Clutter.ActorAlign.START;
+
+        this._list.destroy_all_children();
+        const networks = enabled ? this._bridge.wifiNetworks() : [];
+        const active = networks.filter(n => n.active);
+        const others = networks.filter(n => !n.active).slice(0, MAX_OTHER_NETWORKS);
+
+        if (active.length) {
+            this._list.add_child(label('Tersambung', 'zorin-notch-group-label'));
+            for (const network of active) {
+                this._list.add_child(menuItem({
+                    iconName: network.iconName,
+                    text: network.name,
+                    meta: network.secure ? 'Aman' : 'Terbuka',
+                    trailIcon: 'object-select-symbolic',
+                    accent: 'accent',
+                    bold: true,
+                    onClick: () => {},
+                }));
+            }
+        }
+        if (others.length) {
+            this._list.add_child(label('Jaringan lain', 'zorin-notch-group-label'));
+            for (const network of others) {
+                this._list.add_child(menuItem({
+                    iconName: network.iconName,
+                    text: network.name,
+                    meta: network.secure ? 'Terkunci' : 'Terbuka',
+                    onClick: () => network.activate(),
+                }));
+            }
+        }
+        if (!enabled)
+            this._list.add_child(label('Wi-Fi mati', 'zorin-notch-group-label'));
+
+        this._list.add_child(menuItem({
+            iconName: 'emblem-system-symbolic',
+            text: 'Pengaturan Wi-Fi lainnya',
+            trailIcon: 'pan-end-symbolic',
+            onClick: this._actions.openWifiSettings,
+        }));
+    }
+
+    destroy() {
+        this.actor.destroy();
+    }
+}
+
+/**
+ * Notification that pops out of the notch (05): app icon, title, time, body, one action.
+ * actions: {activate(notification), runAction(notification, action)}
+ */
+export class NotificationView {
+    constructor(actions) {
+        this._actions = actions;
+        this.notification = null;
+
+        this.actor = new St.BoxLayout({style_class: 'zorin-notch-notif', reactive: true});
+        this.actor.connect('button-release-event', () => {
+            if (this.notification)
+                this._actions.activate(this.notification);
+            return Clutter.EVENT_STOP;
+        });
+    }
+
+    show(notification) {
+        this.notification = notification;
+        this.actor.destroy_all_children();
+
+        this.actor.add_child(notificationIconBox(notification));
+
+        const text = new St.BoxLayout({vertical: true, x_expand: true, y_align: Clutter.ActorAlign.CENTER});
+        const titleRow = new St.BoxLayout({x_expand: true});
+        titleRow.add_child(label(plain(notification.title), 'zorin-notch-notif-title', {x_expand: true}));
+        titleRow.add_child(label(relativeTime(notification.datetime), 'zorin-notch-notif-time'));
+        text.add_child(titleRow);
+        const body = plain(notification.body);
+        if (body)
+            text.add_child(label(body, 'zorin-notch-notif-body'));
+        this.actor.add_child(text);
+
+        // First action of the notification, or "Buka" to open it like GNOME's banner would
+        const [action] = notification.actions ?? [];
+        const button = new St.Button({
+            style_class: 'zorin-notch-notif-button',
+            label: action ? plain(action.label) : 'Buka',
+            y_align: Clutter.ActorAlign.CENTER,
+            can_focus: true,
+        });
+        button.connect('clicked', () => {
+            if (action)
+                this._actions.runAction(notification, action);
+            else
+                this._actions.activate(notification);
+        });
+        this.actor.add_child(button);
+    }
+
+    clear() {
+        this.notification = null;
+        this.actor.destroy_all_children();
+    }
+
+    destroy() {
+        this.actor.destroy();
+    }
+}
+
+// One notification in the list (Pego "Notch Notif Row"); drag it right to dismiss
+function notificationRow(notification, actions) {
+    const row = new St.BoxLayout({style_class: 'zorin-notch-notif-row', x_expand: true});
+    row.add_child(notificationIconBox(notification));
+
+    const text = new St.BoxLayout({vertical: true, x_expand: true});
+    const meta = new St.BoxLayout({style_class: 'zorin-notch-notif-meta', x_expand: true});
+    meta.add_child(label(plain(notification.source?.title), 'zorin-notch-notif-app', {x_expand: true}));
+    meta.add_child(label(relativeTime(notification.datetime), 'zorin-notch-notif-time'));
+    if (!notification.acknowledged)
+        meta.add_child(new St.Widget({style_class: 'zorin-notch-unread-dot', y_align: Clutter.ActorAlign.CENTER}));
+    text.add_child(meta);
+    text.add_child(label(plain(notification.title), 'zorin-notch-notif-title'));
+    const body = plain(notification.body);
+    if (body)
+        text.add_child(label(body, 'zorin-notch-notif-body'));
+    row.add_child(text);
+
+    const button = new St.Button({child: row, x_expand: true, can_focus: true, reactive: true});
+    button.connect('clicked', () => {
+        // A drag also ends with a release; only a click without movement opens the notification
+        if (Math.abs(button.translation_x) < 4)
+            actions.activate(notification);
+    });
+
+    const pan = new Clutter.PanAction({pan_axis: Clutter.PanAxis.X_AXIS});
+    pan.connect('pan', action => {
+        const [dx] = action.get_motion_delta(0);
+        button.translation_x = Math.max(0, button.translation_x + dx);
+        button.opacity = 255 * Math.max(0.2, 1 - button.translation_x / (2 * SWIPE_DISMISS_PX));
+        return false;
+    });
+    pan.connect('gesture-end', () => {
+        if (button.translation_x > SWIPE_DISMISS_PX) {
+            actions.dismiss(notification);
+        } else {
+            button.ease({
+                translation_x: 0,
+                opacity: 255,
+                duration: 150,
+                mode: Clutter.AnimationMode.EASE_OUT_QUAD,
+            });
+        }
+    });
+    button.add_action(pan);
+    return button;
+}
+
+/**
+ * Notification list (07): status, header with count and "Bersihkan semua", newest rows.
+ * actions: {activate(notification), dismiss(notification), clearAll()}
+ */
+export class ListView {
+    constructor(source, actions) {
+        this._source = source;
+        this._actions = actions;
+
+        this.actor = new St.BoxLayout({style_class: 'zorin-notch-list', vertical: true});
+        this.statusRow = new StatusRow('zorin-notch-status zorin-notch-panel-status');
+
+        const head = new St.BoxLayout({style_class: 'zorin-notch-list-head'});
+        head.add_child(label('Notifikasi', 'zorin-notch-view-title'));
+        this._count = label('', 'zorin-notch-list-count', {x_expand: true});
+        head.add_child(this._count);
+        const clear = new St.Button({
+            style_class: 'zorin-notch-link-button',
+            label: 'Bersihkan semua',
+            can_focus: true,
+        });
+        clear.connect('clicked', () => actions.clearAll());
+        head.add_child(clear);
+
+        this._rows = new St.BoxLayout({style_class: 'zorin-notch-list-rows', vertical: true});
+
+        this.actor.add_child(this.statusRow.actor);
+        this.actor.add_child(head);
+        this.actor.add_child(this._rows);
+    }
+
+    update() {
+        const notifications = this._source.list();
+        const unread = this._source.unreadCount;
+        this._count.text = unread ? `${unread} baru` : '';
+
+        this._rows.destroy_all_children();
+        for (const notification of notifications.slice(0, MAX_LIST_ROWS))
+            this._rows.add_child(notificationRow(notification, this._actions));
+        if (!notifications.length)
+            this._rows.add_child(label('Tidak ada notifikasi', 'zorin-notch-list-empty'));
+    }
+
+    destroy() {
+        this.actor.destroy();
+    }
+}
+
+/**
+ * Power menu (10). Every entry runs GNOME's own system action; Keluar, Mulai ulang and
+ * Matikan open GNOME's end-session dialog, which asks for confirmation (state 11).
+ * power: {can(id), run(id)}, battery(): percentage or null
+ */
+export class PowerView {
+    constructor(power, battery) {
+        this._power = power;
+        this._battery = battery;
+
+        this.actor = new St.BoxLayout({style_class: 'zorin-notch-power', vertical: true});
+
+        const head = new St.BoxLayout({style_class: 'zorin-notch-power-head'});
+        head.add_child(label('Daya', 'zorin-notch-view-title', {x_expand: true}));
+        this._batteryLabel = label('', 'zorin-notch-list-count');
+        head.add_child(this._batteryLabel);
+        this.actor.add_child(head);
+
+        const item = (id, iconName, text, extra = {}) => {
+            const button = menuItem({iconName, text, onClick: () => power.run(id), ...extra});
+            button.actionId = id;
+            return button;
+        };
+        this._items = [
+            item('lock', 'system-lock-screen-symbolic', 'Kunci layar', {meta: 'Super + L'}),
+            item('suspend', 'weather-clear-night-symbolic', 'Tidur'),
+            item('logout', 'system-log-out-symbolic', 'Keluar', {meta: 'Tutup sesi'}),
+            new St.Widget({style_class: 'zorin-notch-divider', x_expand: true}),
+            item('restart', 'system-reboot-symbolic', 'Mulai ulang'),
+            item('poweroff', 'system-shutdown-symbolic', 'Matikan', {accent: 'danger', bold: true}),
+        ];
+        this._items.forEach(child => this.actor.add_child(child));
+    }
+
+    update() {
+        const percentage = this._battery();
+        this._batteryLabel.text = percentage === null ? '' : `Baterai ${percentage}%`;
+        for (const child of this._items) {
+            if (child.actionId)
+                child.visible = this._power.can(child.actionId);
+        }
+        // The divider separates the session actions from restart/power off; drop it when
+        // neither of those is available
+        const divider = this._items.find(child => !child.actionId);
+        divider.visible = this._power.can('restart') || this._power.can('poweroff');
+    }
+
+    destroy() {
+        this.actor.destroy();
+    }
+}
+
+const AGENT_STATUS_TEXT = {
+    working: 'bekerja…',
+    waiting: 'butuh kamu',
+    done: 'selesai',
+};
+const AGENT_TITLE = {
+    waiting: 'Butuh izin atau jawaban',
+    done: 'Selesai',
+};
+
+/**
+ * Running agents in the compact notch (state 04): agent and project left of center, what
+ * it is doing right of it. A teal dot pulses while it works and turns orange when it waits.
+ */
+export class ActivityRow {
+    constructor() {
+        this.actor = new St.BoxLayout({style_class: 'zorin-notch-status zorin-notch-activity', x_expand: true});
+        const left = new St.BoxLayout({style_class: 'zorin-notch-activity-left', x_expand: true});
+        this._dot = new St.Widget({style_class: 'zorin-notch-activity-dot', y_align: Clutter.ActorAlign.CENTER});
+        this._label = label('', 'zorin-notch-activity-label', {x_expand: true});
+        left.add_child(this._dot);
+        left.add_child(this._label);
+
+        this._state = label('', 'zorin-notch-activity-state', {x_align: Clutter.ActorAlign.END});
+        this.actor.add_child(left);
+        this.actor.add_child(this._state);
+    }
+
+    update(sessions) {
+        const [first] = sessions;
+        if (!first)
+            return;
+        const more = sessions.length > 1 ? ` +${sessions.length - 1}` : '';
+        this._label.text = `${first.name}${first.project ? ` · ${first.project}` : ''}${more}`;
+        this._state.text = AGENT_STATUS_TEXT[first.status] ?? '';
+        const waiting = first.status === 'waiting';
+        if (waiting)
+            this._dot.add_style_pseudo_class('waiting');
+        else
+            this._dot.remove_style_pseudo_class('waiting');
+        this._pulse(!waiting);
+    }
+
+    // Gentle opacity pulse while the agent works
+    _pulse(on) {
+        this._dot.remove_all_transitions();
+        this._dot.opacity = 255;
+        if (!on)
+            return;
+        this._dot.ease({
+            opacity: 90,
+            duration: 700,
+            mode: Clutter.AnimationMode.EASE_IN_OUT_SINE,
+            repeatCount: -1,
+            autoReverse: true,
+        });
+    }
+
+    destroy() {
+        this._dot.remove_all_transitions();
+        this.actor.destroy();
+    }
+}
+
+/**
+ * Agent popup (state 08): teal badge with the agent, project and time, what happened,
+ * and Buka (focus its window) / Abaikan.
+ * actions: {open(entry), dismiss()}
+ */
+export class AgentView {
+    constructor(actions) {
+        this._actions = actions;
+        this.entry = null;
+        this.actor = new St.BoxLayout({style_class: 'zorin-notch-agent', vertical: true});
+    }
+
+    show(entry) {
+        this.entry = entry;
+        this.actor.destroy_all_children();
+
+        const head = new St.BoxLayout({style_class: 'zorin-notch-agent-head'});
+        head.add_child(new St.Bin({
+            style_class: 'zorin-notch-ai-badge',
+            child: label(entry.name, 'zorin-notch-ai-badge-label'),
+            y_align: Clutter.ActorAlign.CENTER,
+        }));
+        head.add_child(label(entry.project || 'agent', 'zorin-notch-agent-source', {x_expand: true}));
+        head.add_child(label('sekarang', 'zorin-notch-agent-source'));
+        this.actor.add_child(head);
+
+        this.actor.add_child(label(AGENT_TITLE[entry.status] ?? entry.status, 'zorin-notch-agent-title'));
+        if (entry.message)
+            this.actor.add_child(label(entry.message, 'zorin-notch-agent-message'));
+
+        const actionsRow = new St.BoxLayout({style_class: 'zorin-notch-agent-actions'});
+        const open = new St.Button({style_class: 'zorin-notch-ai-button', can_focus: true});
+        const openBox = new St.BoxLayout({style_class: 'zorin-notch-pill-content'});
+        openBox.add_child(icon('utilities-terminal-symbolic', 'zorin-notch-ai-button-icon'));
+        openBox.add_child(label('Buka', 'zorin-notch-ai-button-label'));
+        open.child = openBox;
+        open.connect('clicked', () => this._actions.open(entry));
+        const skip = new St.Button({
+            style_class: 'zorin-notch-link-button',
+            label: 'Abaikan',
+            x_expand: true,
+            x_align: Clutter.ActorAlign.END,
+            can_focus: true,
+        });
+        skip.connect('clicked', () => this._actions.dismiss());
+        actionsRow.add_child(open);
+        actionsRow.add_child(skip);
+        this.actor.add_child(actionsRow);
+    }
+
+    clear() {
+        this.entry = null;
+        this.actor.destroy_all_children();
+    }
+
+    destroy() {
+        this.actor.destroy();
+    }
+}
+
+const MAX_SEARCH_RESULTS = 6;
+
+/**
+ * App search in the notch ("Cari"): an entry and the matching apps, ranked like GNOME's own
+ * app search (Shell.AppSystem.search, then by usage). Enter opens the first result; the last
+ * row hands the query over to the GNOME overview for files and other providers.
+ * actions: {launch(app), searchInOverview(query)}
+ */
+export class SearchView {
+    constructor(actions) {
+        this._actions = actions;
+        this._results = [];
+
+        this.actor = new St.BoxLayout({style_class: 'zorin-notch-search', vertical: true});
+        this.statusRow = new StatusRow('zorin-notch-status zorin-notch-panel-status');
+
+        this.entry = new St.Entry({
+            style_class: 'zorin-notch-search-entry',
+            hint_text: 'Cari aplikasi…',
+            can_focus: true,
+            x_expand: true,
+            primary_icon: new St.Icon({icon_name: 'system-search-symbolic', style_class: 'zorin-notch-search-icon'}),
+        });
+        this.entry.clutter_text.connect('text-changed', () => this.update());
+        this.entry.clutter_text.connect('activate', () => {
+            const [first] = this._results;
+            if (first)
+                actions.launch(first);
+            else if (this.entry.text.trim())
+                actions.searchInOverview(this.entry.text.trim());
+        });
+
+        this._list = new St.BoxLayout({style_class: 'zorin-notch-search-results', vertical: true});
+
+        this.actor.add_child(this.statusRow.actor);
+        this.actor.add_child(this.entry);
+        this.actor.add_child(this._list);
+    }
+
+    reset() {
+        this.entry.text = '';
+        this.update();
+    }
+
+    focus() {
+        this.entry.grab_key_focus();
+    }
+
+    _search(query) {
+        if (!query)
+            return [];
+        const appSystem = Shell.AppSystem.get_default();
+        const usage = Shell.AppUsage.get_default();
+        const ids = [];
+        for (const group of Shell.AppSystem.search(query))
+            ids.push(...group.sort((a, b) => usage.compare(a, b)));
+        return ids.map(id => appSystem.lookup_app(id))
+            .filter(app => app?.app_info?.should_show())
+            .slice(0, MAX_SEARCH_RESULTS);
+    }
+
+    update() {
+        const query = this.entry.text.trim();
+        this._results = this._search(query);
+        this._list.destroy_all_children();
+
+        this._results.forEach((app, index) => {
+            const box = new St.BoxLayout({style_class: 'zorin-notch-menu-item-content', x_expand: true});
+            box.add_child(new St.Bin({
+                style_class: 'zorin-notch-search-app-icon',
+                child: app.create_icon_texture(28),
+            }));
+            box.add_child(label(app.get_name(), 'zorin-notch-menu-label', {x_expand: true}));
+            if (index === 0)
+                box.add_child(label('Enter', 'zorin-notch-menu-meta'));
+            const button = new St.Button({
+                style_class: 'zorin-notch-menu-item',
+                child: box,
+                x_expand: true,
+                can_focus: true,
+            });
+            button.connect('clicked', () => this._actions.launch(app));
+            this._list.add_child(button);
+        });
+
+        if (query) {
+            if (!this._results.length)
+                this._list.add_child(label('Tidak ada aplikasi yang cocok', 'zorin-notch-list-empty'));
+            this._list.add_child(menuItem({
+                iconName: 'system-search-symbolic',
+                text: `Cari "${query}" di Overview`,
+                trailIcon: 'pan-end-symbolic',
+                onClick: () => this._actions.searchInOverview(query),
+            }));
+        }
+    }
+
+    destroy() {
+        this.actor.destroy();
+    }
+}
+
+// Format of the panel's date and time ("Sab 31 Okt  12.52")
+export function panelDateText(clockText) {
+    const date = GLib.DateTime.new_now_local().format('%a %-d %b');
+    return `${date}  ${clockText}`;
+}

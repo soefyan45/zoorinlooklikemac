@@ -1,0 +1,9 @@
+{
+  "uuid": "zorin-notch@soefyan45.github.io",
+  "name": "Zorin Notch",
+  "description": "Mac-style notch that replaces the top bar on Zorin OS: status, quick settings, notifications and power menu.",
+  "shell-version": [
+    "46"
+  ],
+  "version-name": "0.0.1"
+}

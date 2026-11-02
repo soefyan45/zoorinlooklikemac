@@ -1,0 +1,4 @@
+# Personal GNOME settings backups made by scripts/backup.sh
+backups/
+# Nested-shell logs and screenshots (may contain local network names)
+logs/

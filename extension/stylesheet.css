@@ -1,0 +1,555 @@
+/* Zorin Notch. Values follow extension/tokens.js (Pego design tokens):
+   menu-text #fff, notch-label #FFFFFFB8 (.72), notch-control #FFFFFF24 (.14),
+   notch-tile #FFFFFF12 (.07), notch-tile-edge #FFFFFF0F (.06), accent #F05A24,
+   on-accent #0F0E12. */
+
+.zorin-notch-status,
+.zorin-notch-panel,
+.zorin-notch-wifi {
+    font-family: "Inter", sans-serif;
+    color: #ffffff;
+}
+
+/* Status row (Pego "stRow"): padding 0 16, 32 px gap around the camera */
+.zorin-notch-status {
+    padding: 0 16px;
+    spacing: 32px;
+    min-height: 30px;
+}
+
+.zorin-notch-status-right {
+    spacing: 10px;
+}
+
+.zorin-notch-clock {
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.zorin-notch-battery {
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.zorin-notch-status-icon,
+.zorin-notch-icon {
+    icon-size: 16px;
+    color: #ffffff;
+}
+
+/* Full panel (state 06): status at y 1, body at y 48 */
+.zorin-notch-panel {
+    padding-top: 1px;
+    spacing: 17px;
+}
+
+.zorin-notch-panel-status,
+.zorin-notch-wifi-status {
+    padding: 0;
+}
+
+.zorin-notch-panel-body {
+    spacing: 16px;
+}
+
+.zorin-notch-tiles {
+    spacing: 8px;
+}
+
+.zorin-notch-tile {
+    background-color: rgba(255, 255, 255, 0.07);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 26px;
+    padding: 10px;
+    spacing: 10px;
+}
+
+.zorin-notch-tile-circle {
+    width: 32px;
+    height: 32px;
+    border-radius: 16px;
+    background-color: rgba(255, 255, 255, 0.14);
+}
+
+.zorin-notch-tile-circle:hover {
+    background-color: rgba(255, 255, 255, 0.22);
+}
+
+.zorin-notch-tile-circle:checked {
+    background-color: #f05a24;
+}
+
+.zorin-notch-tile-circle:checked .zorin-notch-icon {
+    color: #0f0e12;
+}
+
+.zorin-notch-tile-title {
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.zorin-notch-tile-subtitle {
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.72);
+}
+
+.zorin-notch-sliders {
+    spacing: 10px;
+}
+
+.zorin-notch-slider-row {
+    spacing: 12px;
+}
+
+.zorin-notch-slider {
+    height: 16px;
+    -barlevel-height: 6px;
+    -barlevel-background-color: rgba(255, 255, 255, 0.14);
+    -barlevel-active-background-color: #ffffff;
+    -barlevel-border-width: 0;
+    -slider-handle-radius: 0;
+    -slider-handle-border-width: 0;
+}
+
+.zorin-notch-slider-value {
+    width: 36px;
+    font-size: 12px;
+    font-weight: 500;
+    text-align: right;
+    color: rgba(255, 255, 255, 0.72);
+}
+
+.zorin-notch-actions-group {
+    spacing: 8px;
+}
+
+.zorin-notch-pill-button {
+    height: 32px;
+    border-radius: 16px;
+    padding: 0 16px 0 14px;
+    background-color: rgba(255, 255, 255, 0.14);
+}
+
+.zorin-notch-pill-content {
+    spacing: 8px;
+}
+
+.zorin-notch-pill-label {
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.zorin-notch-round-button {
+    width: 32px;
+    height: 32px;
+    border-radius: 16px;
+    background-color: rgba(255, 255, 255, 0.14);
+}
+
+.zorin-notch-round-button.small {
+    width: 28px;
+    height: 28px;
+    border-radius: 14px;
+}
+
+.zorin-notch-pill-button:hover,
+.zorin-notch-round-button:hover {
+    background-color: rgba(255, 255, 255, 0.22);
+}
+
+.zorin-notch-tile-circle:focus,
+.zorin-notch-pill-button:focus,
+.zorin-notch-round-button:focus,
+.zorin-notch-menu-item:focus,
+.zorin-notch-switch:focus {
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.5);
+}
+
+/* Wi-Fi settings (state 09) */
+.zorin-notch-wifi {
+    padding-top: 1px;
+    spacing: 10px;
+}
+
+.zorin-notch-wifi-status {
+    padding: 0 8px;
+}
+
+.zorin-notch-wifi-head {
+    padding: 0 8px 0 4px;
+    spacing: 12px;
+}
+
+.zorin-notch-view-title {
+    font-size: 15px;
+    font-weight: 600;
+}
+
+.zorin-notch-switch {
+    width: 36px;
+    height: 20px;
+    border-radius: 10px;
+    padding: 2px;
+    background-color: rgba(255, 255, 255, 0.14);
+}
+
+.zorin-notch-switch:checked {
+    background-color: #f05a24;
+}
+
+.zorin-notch-switch-knob {
+    width: 16px;
+    height: 16px;
+    border-radius: 8px;
+    background-color: #ffffff;
+}
+
+.zorin-notch-wifi-list {
+    spacing: 2px;
+}
+
+.zorin-notch-group-label {
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.3px;
+    color: rgba(255, 255, 255, 0.72);
+    padding: 4px 4px 2px;
+}
+
+.zorin-notch-menu-item {
+    border-radius: 18px;
+    padding: 4px 12px 4px 4px;
+}
+
+.zorin-notch-menu-item:hover {
+    background-color: rgba(255, 255, 255, 0.07);
+}
+
+.zorin-notch-menu-item-content {
+    spacing: 12px;
+}
+
+.zorin-notch-menu-icon {
+    width: 28px;
+    height: 28px;
+    border-radius: 14px;
+    background-color: rgba(255, 255, 255, 0.14);
+}
+
+.zorin-notch-menu-icon.accent {
+    background-color: #f05a24;
+}
+
+.zorin-notch-menu-icon.accent .zorin-notch-icon {
+    color: #0f0e12;
+}
+
+.zorin-notch-menu-label {
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.zorin-notch-menu-label.bold {
+    font-weight: 600;
+}
+
+.zorin-notch-menu-meta {
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.72);
+}
+
+.zorin-notch-menu-trail {
+    icon-size: 16px;
+    color: rgba(255, 255, 255, 0.72);
+}
+
+/* Notification (state 05): icon, text and one action */
+.zorin-notch-notif {
+    font-family: "Inter", sans-serif;
+    color: #ffffff;
+    spacing: 12px;
+}
+
+.zorin-notch-notif-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    background-color: rgba(255, 255, 255, 0.14);
+}
+
+.zorin-notch-notif-glyph {
+    icon-size: 24px;
+    color: #ffffff;
+}
+
+.zorin-notch-notif-title {
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.zorin-notch-notif-time,
+.zorin-notch-notif-body {
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.85);
+}
+
+.zorin-notch-notif-body {
+    font-size: 13px;
+}
+
+.zorin-notch-notif-button {
+    font-size: 12px;
+    font-weight: 600;
+    color: #ffffff;
+    padding: 6px 14px;
+    border-radius: 999px;
+    background-color: rgba(255, 255, 255, 0.14);
+}
+
+.zorin-notch-notif-button:hover {
+    background-color: rgba(255, 255, 255, 0.22);
+}
+
+/* Notification list (state 07) */
+.zorin-notch-list {
+    font-family: "Inter", sans-serif;
+    color: #ffffff;
+    padding-top: 1px;
+    spacing: 12px;
+}
+
+.zorin-notch-list-head {
+    spacing: 8px;
+}
+
+.zorin-notch-list-count,
+.zorin-notch-link-button {
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.72);
+}
+
+.zorin-notch-link-button {
+    font-weight: 500;
+}
+
+.zorin-notch-link-button:hover {
+    color: #ffffff;
+}
+
+.zorin-notch-list-rows {
+    spacing: 12px;
+}
+
+.zorin-notch-notif-row {
+    background-color: rgba(255, 255, 255, 0.07);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 18px;
+    padding: 10px;
+    spacing: 12px;
+}
+
+.zorin-notch-notif-meta {
+    spacing: 8px;
+}
+
+.zorin-notch-notif-app {
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.72);
+}
+
+.zorin-notch-unread-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 3px;
+    background-color: #f05a24;
+}
+
+.zorin-notch-list-empty {
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.72);
+    padding: 8px 4px;
+}
+
+/* Power menu (state 10) */
+.zorin-notch-power {
+    font-family: "Inter", sans-serif;
+    color: #ffffff;
+    spacing: 2px;
+}
+
+.zorin-notch-power-head {
+    padding: 0 12px 6px 6px;
+}
+
+.zorin-notch-divider {
+    height: 1px;
+    margin: 4px 0;
+    background-color: rgba(255, 255, 255, 0.06);
+}
+
+.zorin-notch-menu-icon.danger {
+    background-color: #b81d13;
+}
+
+/* Tray row in the full panel: indicators moved out of the dock. They are no longer inside
+   #panel, so give their buttons and icons the notch look here. */
+.zorin-notch-tray {
+    spacing: 4px;
+    padding: 2px 0;
+}
+
+.zorin-notch-tray .panel-button {
+    min-width: 32px;
+    min-height: 32px;
+    padding: 0 6px;
+    border-radius: 16px;
+    color: #ffffff;
+    background-color: rgba(255, 255, 255, 0.07);
+}
+
+.zorin-notch-tray .panel-button:hover,
+.zorin-notch-tray .panel-button:checked,
+.zorin-notch-tray .panel-button:active {
+    background-color: rgba(255, 255, 255, 0.22);
+}
+
+.zorin-notch-tray .system-status-icon {
+    icon-size: 16px;
+    color: #ffffff;
+}
+
+/* App search (from "Cari" in the full panel) */
+.zorin-notch-search {
+    font-family: "Inter", sans-serif;
+    color: #ffffff;
+    padding-top: 1px;
+    spacing: 10px;
+}
+
+.zorin-notch-search-entry {
+    color: #ffffff;
+    font-size: 14px;
+    padding: 8px 14px;
+    border-radius: 18px;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    background-color: rgba(255, 255, 255, 0.1);
+    caret-color: #f05a24;
+    selection-background-color: rgba(240, 90, 36, 0.5);
+    selected-color: #ffffff;
+}
+
+.zorin-notch-search-entry:focus {
+    border-color: rgba(240, 90, 36, 0.6);
+}
+
+.zorin-notch-search-entry StLabel.hint-text {
+    color: rgba(255, 255, 255, 0.5);
+}
+
+.zorin-notch-search-icon {
+    icon-size: 16px;
+    color: rgba(255, 255, 255, 0.72);
+    padding-right: 6px;
+}
+
+.zorin-notch-search-results {
+    spacing: 2px;
+}
+
+.zorin-notch-search-app-icon {
+    width: 28px;
+    height: 28px;
+}
+
+/* Coding agents: activity row (state 04) and agent popup (state 08).
+   ai #4FD1C5, on-ai #06201D, accent #F05A24 */
+.zorin-notch-activity-left {
+    spacing: 8px;
+}
+
+.zorin-notch-activity-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 4px;
+    background-color: #4fd1c5;
+}
+
+.zorin-notch-activity-dot:waiting {
+    background-color: #f05a24;
+}
+
+.zorin-notch-activity-label {
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.zorin-notch-activity-state {
+    font-size: 12px;
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.72);
+}
+
+.zorin-notch-agent {
+    font-family: "Inter", sans-serif;
+    color: #ffffff;
+    spacing: 8px;
+}
+
+.zorin-notch-agent-head {
+    spacing: 8px;
+}
+
+.zorin-notch-ai-badge {
+    background-color: #4fd1c5;
+    border-radius: 4px;
+    padding: 1px 6px;
+}
+
+.zorin-notch-ai-badge-label {
+    font-size: 11px;
+    font-weight: 700;
+    color: #06201d;
+}
+
+.zorin-notch-agent-source {
+    font-size: 12px;
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.72);
+}
+
+.zorin-notch-agent-title {
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.zorin-notch-agent-message {
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.85);
+}
+
+.zorin-notch-agent-actions {
+    spacing: 8px;
+    padding-top: 4px;
+}
+
+.zorin-notch-ai-button {
+    height: 30px;
+    border-radius: 15px;
+    padding: 0 14px 0 12px;
+    background-color: #4fd1c5;
+}
+
+.zorin-notch-ai-button:hover {
+    background-color: #6fdcd2;
+}
+
+.zorin-notch-ai-button-icon {
+    icon-size: 16px;
+    color: #06201d;
+}
+
+.zorin-notch-ai-button-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: #06201d;
+}
