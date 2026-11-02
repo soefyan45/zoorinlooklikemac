@@ -133,6 +133,31 @@ async function testDockZoom(extension, shotDir) {
         check('dock zoom', false, `zoom=${!!zoom} icons=${icons.length}`);
         return;
     }
+    // Geometry of the dock, outermost first, to see where its padding comes from
+    const panel = global.zorinTaskbar.panels[0];
+    const chain = [['panelBox', panel.panelBox], ['clipContainer', panel.clipContainer], ['dtpPanel', panel],
+        ['panel', panel.panel], ['taskbar.actor', taskbar.actor], ['_container', taskbar._container],
+        ['_scrollView', taskbar._scrollView], ['_box', taskbar._box], ['item0', taskbar._box?.get_first_child()]];
+    for (const [name, actor] of chain) {
+        if (!actor)
+            continue;
+        const [ax, ay] = actor.get_transformed_position();
+        const node = actor.get_theme_node?.();
+        const pad = node ? ['TOP', 'RIGHT', 'BOTTOM', 'LEFT'].map(side => node.get_padding(St.Side[side])).join(',') : '-';
+        console.log(LOG_PREFIX, `dock geom ${name}: x=${Math.round(ax)} y=${Math.round(ay)} ` +
+            `${actor.width}x${actor.height} pad=${pad} style="${actor.get_style?.() ?? ''}" class="${actor.style_class ?? ''}"`);
+    }
+    for (const item of taskbar._box?.get_children() ?? []) {
+        const c = item.child;
+        console.log(LOG_PREFIX, `dock item ${c?.app?.get_id?.() ?? item.constructor.name}: item=${item.width} ` +
+            `itemStyle="${item.get_style?.() ?? ''}" child=${c?.width} childStyle="${c?.get_style?.() ?? ''}" ` +
+            `iconC=${c?._iconContainer?.width} iconCStyle="${c?._iconContainer?.get_style?.()}" ` +
+            `iconKids=${c?._iconContainer?.get_children?.().map(k => `${k.constructor.name}:${k.width}/${k.get_style?.() ?? ''}/${k.style_class ?? ''}`).join(' ')} ` +
+            `icon=${c?.icon?.width} iconSize=${c?.icon?.iconSize} kids=${c?.get_children?.().map(k => `${k.constructor.name}:${k.width}${k.visible ? '' : '(h)'}`).join(' ')}`);
+    }
+    for (const child of panel.panel?.get_children?.() ?? [])
+        console.log(LOG_PREFIX, `dock panel child ${child.name ?? child.constructor.name}: ${child.width}x${child.height} visible=${child.visible}`);
+
     const icon = icons[0];
     const [x] = icon.get_transformed_position();
     const [w] = icon.get_transformed_size();

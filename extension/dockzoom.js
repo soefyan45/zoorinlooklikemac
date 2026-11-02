@@ -6,13 +6,18 @@
 // The taskbar clips its icons to the dock, so icons grow around their center and the
 // maximum scale is kept small enough to fit the dock's padding.
 //
-// It also gives the dock the glass look of the design (style class zorin-notch-dock: edge on
-// every side, soft shadow, inner highlight). The background color itself stays with
-// zorin-taskbar, which sets it inline.
+// It also draws the dock's glass background as a separate plate hugging the icons
+// (zorin-notch-dock-plate). The taskbar itself stays as tall as its panel size, because it
+// derives the icon size from it; the plate is only a few pixels larger than the icons, so
+// the dock looks slim while icons and their click area keep their size. The taskbar's own
+// background is made transparent by the dock preset.
 
 import Clutter from 'gi://Clutter';
 import GLib from 'gi://GLib';
 import Graphene from 'gi://Graphene';
+import St from 'gi://St';
+
+import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
 import {LOG_PREFIX, trace} from './log.js';
 
@@ -30,6 +35,9 @@ const DOCK_STYLE_CLASS = 'zorin-notch-dock';
 // the vertical padding (which sets the icon size) is kept as is.
 const ICON_MARGIN_X = 1;
 const ICON_PADDING_X = 3;
+// Room between the icons and the edge of the glass plate
+const PLATE_PAD_X = 6;
+const PLATE_PAD_Y = 5;
 
 // Pointer position as the shell's input sees it (follows virtual devices too)
 function pointerPosition() {
@@ -43,6 +51,7 @@ export class DockZoom {
         this._watched = new Set();
         this._styled = new Set();
         this._compacted = new Map(); // icon -> its original inline styles
+        this._plates = new Map(); // panel -> glass plate behind its icons
         this._emitter = null;
         this._waitId = 0;
         // zorin-taskbar may be enabled after us at login; wait for it
@@ -84,6 +93,7 @@ export class DockZoom {
             if (!target)
                 continue;
             this._compactAll(taskbar);
+            this._addPlate(panel, taskbar);
             taskbar._box?.connectObject('child-added', () => {
                 // The taskbar styles a new icon while adding it; compact it afterwards
                 GLib.idle_add(GLib.PRIORITY_DEFAULT, () => {
@@ -114,6 +124,44 @@ export class DockZoom {
         } catch {
             return [];
         }
+    }
+
+    _addPlate(panel, taskbar) {
+        const anchor = panel.panelBox ?? panel;
+        // The plate lives in uiGroup (stage coordinates), just below the dock's top-level
+        // container, so it is drawn under the icons
+        const uiGroup = Main.layoutManager.uiGroup;
+        let top = anchor;
+        while (top && top.get_parent() !== uiGroup)
+            top = top.get_parent();
+        if (!top || !taskbar._box)
+            return;
+        const plate = new St.Widget({style_class: 'zorin-notch-dock-plate', reactive: false});
+        uiGroup.insert_child_below(plate, top);
+        this._plates.set(panel, plate);
+
+        const sync = () => this._syncPlate(plate, taskbar);
+        // Icons coming and going resize the box; the dock re-centers by moving the panel
+        taskbar._box.connectObject('notify::allocation', sync, 'notify::mapped', sync, this);
+        panel.connectObject('notify::allocation', sync, this);
+        anchor.connectObject('notify::allocation', sync, 'notify::visible', sync, this);
+        sync();
+    }
+
+    _syncPlate(plate, taskbar) {
+        const box = taskbar._box;
+        if (!box?.mapped || !box.width) {
+            plate.hide();
+            return;
+        }
+        const scale = St.ThemeContext.get_for_stage(global.stage).scale_factor;
+        const [x, y] = box.get_transformed_position();
+        const [w, h] = box.get_transformed_size();
+        const iconSize = (taskbar.iconSize || 24) * scale;
+        const height = Math.round(iconSize + 2 * PLATE_PAD_Y * scale);
+        plate.set_position(Math.round(x - PLATE_PAD_X * scale), Math.round(y + (h - height) / 2));
+        plate.set_size(Math.round(w + 2 * PLATE_PAD_X * scale), height);
+        plate.show();
     }
 
     // Narrower dock: less horizontal margin and padding around each icon
@@ -210,6 +258,14 @@ export class DockZoom {
             } catch {}
         }
         this._compacted.clear();
+        for (const [panel, plate] of this._plates) {
+            try {
+                panel.disconnectObject(this);
+                (panel.panelBox ?? panel).disconnectObject(this);
+            } catch {}
+            plate.destroy();
+        }
+        this._plates.clear();
         for (const panel of this._styled) {
             try {
                 panel.remove_style_class_name?.(DOCK_STYLE_CLASS);
