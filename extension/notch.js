@@ -69,13 +69,14 @@ const STATUS_ROW_HEIGHT = 30;
 const CONTENT_MIN_HEIGHT = 28;
 // Expanded views: padding from the notch edges (Pego frames)
 const VIEW_PADDING = {
-    [State.NOTIFICATION]: {x: 26, top: 44, bottom: 16},
+    // Popups start close to the top edge: the design's room for the camera is gone
+    [State.NOTIFICATION]: {x: 22, top: 14, bottom: 14},
     [State.PANEL]: {x: 30, top: 0, bottom: 20},
     [State.WIFI]: {x: 22, top: 0, bottom: 20},
     [State.LIST]: {x: 30, top: 0, bottom: 24},
-    [State.POWER]: {x: 20, top: 38, bottom: 18},
+    [State.POWER]: {x: 20, top: 16, bottom: 18},
     [State.SEARCH]: {x: 30, top: 0, bottom: 20},
-    [State.AGENT]: {x: 26, top: 36, bottom: 20},
+    [State.AGENT]: {x: 22, top: 14, bottom: 18},
 };
 // How long an agent popup stays when nobody looks at it
 const AGENT_POPUP_MS = {done: 6000, waiting: 12000};

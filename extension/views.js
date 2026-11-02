@@ -387,9 +387,10 @@ export class NotificationView {
         this.actor.add_child(notificationIconBox(notification));
 
         const text = new St.BoxLayout({vertical: true, x_expand: true, y_align: Clutter.ActorAlign.CENTER});
-        const titleRow = new St.BoxLayout({x_expand: true});
+        // The title gives way (ellipsized) so the time keeps its place, with a gap between them
+        const titleRow = new St.BoxLayout({style_class: 'zorin-notch-notif-title-row', x_expand: true});
         titleRow.add_child(label(plain(notification.title), 'zorin-notch-notif-title', {x_expand: true}));
-        titleRow.add_child(label(relativeTime(notification.datetime), 'zorin-notch-notif-time'));
+        titleRow.add_child(label(relativeTime(notification.datetime), 'zorin-notch-notif-time', {x_expand: false}));
         text.add_child(titleRow);
         const body = plain(notification.body);
         if (body)

@@ -287,6 +287,10 @@
     font-weight: 600;
 }
 
+.zorin-notch-notif-title-row {
+    spacing: 10px;
+}
+
 .zorin-notch-notif-time,
 .zorin-notch-notif-body {
     font-size: 12px;

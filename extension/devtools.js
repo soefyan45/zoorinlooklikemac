@@ -300,7 +300,7 @@ async function testNotifications(notch, pointer, keyboard, shotDir) {
     await wait(500);
 
     // 05: a normal notification pops out of the notch and is marked as seen
-    const popup = sendNotification('Unduhan selesai', 'Zorin-OS-17.3-Core-64-bit.iso · 3,9 GB');
+    const popup = sendNotification('kebun zub zub · project for testing a very long title', 'Allow Claude to run rtk grep -rn something in the project folder', {action: 'Allow once'});
     await wait(SETTLE_MS);
     check('notification pops out (05)', notch.state === State.NOTIFICATION, notch.state);
     check('popup marks it seen', popup.acknowledged === true);
