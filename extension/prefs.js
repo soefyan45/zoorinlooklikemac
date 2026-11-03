@@ -25,6 +25,23 @@ const ACCENT_NAMES = [
     ['pink', 'Pink'],
 ];
 
+const AGENT_INDICATORS = [
+    ['sweep', 'Light sweeping along the line'],
+    ['swap', 'Two dots trading places'],
+    ['dots', 'Three pulsing dots'],
+];
+
+const AGENT_COLORS = [
+    ['accent', 'Accent color'],
+    ['teal', 'Teal'],
+    ['orange', 'Orange'],
+    ['blue', 'Blue'],
+    ['green', 'Green'],
+    ['purple', 'Purple'],
+    ['pink', 'Pink'],
+    ['white', 'White'],
+];
+
 const AUTOHIDE = [
     ['off', 'Off'],
     ['all-windows', 'When windows cover the dock'],
@@ -137,6 +154,14 @@ export default class ZorinNotchPreferences extends ExtensionPreferences {
             'Press Super and start typing: the notch search opens instead of the overview search'));
         notchBehavior.add(switchRow(settings, 'show-agents', 'AI agents in the notch',
             'Claude Code and opencode: working, needs permission, finished'));
+        const indicator = choiceRow(settings, 'agent-indicator', 'Working animation',
+            'On the standby line while an agent works; hover the notch for details', AGENT_INDICATORS);
+        settings.bind('show-agents', indicator, 'sensitive', Gio.SettingsBindFlags.GET);
+        notchBehavior.add(indicator);
+        const indicatorColor = choiceRow(settings, 'agent-color', 'Animation color',
+            'Color of the working animation', AGENT_COLORS);
+        settings.bind('show-agents', indicatorColor, 'sensitive', Gio.SettingsBindFlags.GET);
+        notchBehavior.add(indicatorColor);
         notch.add(notchBehavior);
 
         const notchLook = new Adw.PreferencesGroup({title: _('Appearance')});

@@ -80,6 +80,16 @@ const STRINGS = {
         'Search while typing in the overview': 'Cari saat mengetik di overview',
         'Press Super and start typing: the notch search opens instead of the overview search':
             'Tekan Super lalu ketik: pencarian notch terbuka, bukan pencarian overview',
+        'Working animation': 'Animasi saat bekerja',
+        'On the standby line while an agent works; hover the notch for details':
+            'Di garis standby saat agent bekerja; arahkan kursor ke notch untuk detail',
+        'Light sweeping along the line': 'Cahaya menyapu sepanjang garis',
+        'Two dots trading places': 'Dua titik bertukar tempat',
+        'Three pulsing dots': 'Tiga titik berdenyut',
+        'Animation color': 'Warna animasi',
+        'Color of the working animation': 'Warna animasi saat agent bekerja',
+        'Teal': 'Teal',
+        'White': 'Putih',
         'Floating notch': 'Notch melayang',
         'A rounded pill below the top edge instead of a notch cut into it':
             'Pil bulat di bawah tepi atas, bukan notch yang menempel di tepi',

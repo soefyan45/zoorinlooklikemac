@@ -87,6 +87,29 @@
       <default>true</default>
       <summary>Typing in the overview (after Super) opens the notch's search instead</summary>
     </key>
+    <key name="agent-indicator" type="s">
+      <choices>
+        <choice value="sweep"/>
+        <choice value="swap"/>
+        <choice value="dots"/>
+      </choices>
+      <default>'sweep'</default>
+      <summary>Animation on the standby line while an agent works</summary>
+    </key>
+    <key name="agent-color" type="s">
+      <choices>
+        <choice value="accent"/>
+        <choice value="teal"/>
+        <choice value="orange"/>
+        <choice value="blue"/>
+        <choice value="green"/>
+        <choice value="purple"/>
+        <choice value="pink"/>
+        <choice value="white"/>
+      </choices>
+      <default>'accent'</default>
+      <summary>Color of the agent animation on the standby line</summary>
+    </key>
     <key name="show-agents" type="b">
       <default>true</default>
       <summary>Show coding agents (Claude Code, opencode) in the notch</summary>

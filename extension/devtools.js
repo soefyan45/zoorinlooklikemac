@@ -205,9 +205,35 @@ async function testAgents(notch, shotDir) {
 
     await callAgentEvent('claude', 'sesi-uji', 'working', 'zoorinlooklikemac', 'Running Bash');
     await wait(SETTLE_MS);
-    check('working agent shows the activity row (04)', notch.state === State.ACTIVITY, notch.state);
+    check('working agent animates the standby line', notch.state === State.ACTIVITY &&
+        Math.round(notch._height.value) <= 8, `${notch.state} ${notch.debugSize}`);
+    check('line animation runs', notch._activityTimeline.is_playing());
+    notch._settings.set_string('agent-color', 'teal');
+    check('animation color follows the preferences', notch._agentColor() === '#4FD1C5', notch._agentColor());
+    notch._settings.reset('agent-color');
+    check('default animation color is the accent', notch._agentColor() === '#F05A24', notch._agentColor());
+    if (shotDir) {
+        for (const style of ['sweep', 'swap', 'dots']) {
+            notch._settings.set_string('agent-indicator', style);
+            await wait(400);
+            await screenshot(`${shotDir}/activity-${style}.png`);
+        }
+        notch._settings.set_string('agent-indicator', 'dots');
+        notch._settings.set_string('agent-color', 'teal');
+        await wait(400);
+        await screenshot(`${shotDir}/activity-dots-teal.png`);
+        notch._settings.reset('agent-indicator');
+        notch._settings.reset('agent-color');
+    }
+
+    // Hovering while an agent works shows its row
+    notch.setState(State.PEEK);
+    await wait(SETTLE_MS);
+    check('hover shows the agent row', notch._activityRow.actor.visible && !notch._statusRow.actor.visible);
     if (shotDir)
         await screenshot(`${shotDir}/activity.png`);
+    notch.setState(State.IDLE);
+    await wait(500);
 
     await callAgentEvent('claude', 'sesi-uji', 'waiting', 'zoorinlooklikemac', 'Claude needs your permission to use Bash');
     await wait(SETTLE_MS);
@@ -218,7 +244,9 @@ async function testAgents(notch, shotDir) {
     }
     notch.setState(State.IDLE);
     await wait(500);
-    check('dismissed popup returns to the activity row', notch.state === State.ACTIVITY, notch.state);
+    check('dismissed popup returns to the activity line', notch.state === State.ACTIVITY, notch.state);
+    if (shotDir)
+        await screenshot(`${shotDir}/activity-waiting.png`);
 
     await callAgentEvent('claude', 'sesi-uji', 'done', 'zoorinlooklikemac', 'Claude finished its turn');
     await wait(SETTLE_MS);

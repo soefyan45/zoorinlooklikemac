@@ -9,6 +9,7 @@ import St from 'gi://St';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
 import {LOG_PREFIX, trace} from './log.js';
+import {ACCENTS} from './theme.js';
 import {drawNotch} from './shape.js';
 import {Color, IdleHitArea, StateSize, Timing} from './tokens.js';
 import {BatterySource, ClockSource, NetworkSource} from './sources.js';
@@ -138,6 +139,14 @@ export class Notch {
         Main.overview.searchEntry?.clutter_text.connectObject(
             'text-changed', () => this._onOverviewTyping(), this);
 
+        // Agent animation on the standby line, running only while it is shown
+        this._activityPhase = 0;
+        this._activityTimeline = new Clutter.Timeline({actor: this.actor, duration: 1000, repeat_count: -1});
+        this._activityTimeline.connect('new-frame', () => {
+            this._activityPhase += Math.min(this._activityTimeline.get_delta(), 50) / 1000;
+            this._area.queue_repaint();
+        });
+
         this._ticker = new Clutter.Timeline({actor: this.actor, duration: 1000, repeat_count: -1});
         this._ticker.connect('new-frame', () => this._tick(Math.min(this._ticker.get_delta(), 50) / 1000));
 
@@ -260,7 +269,6 @@ export class Notch {
             [State.LIST]: this._listView.actor,
             [State.POWER]: this._powerView.actor,
             [State.SEARCH]: this._searchView.actor,
-            [State.ACTIVITY]: this._activityRow.actor,
             [State.AGENT]: this._agentView.actor,
         };
         for (const layer of Object.values(this._layers)) {
@@ -317,6 +325,9 @@ export class Notch {
         if (!this._activityRow)
             return;
         this._activityRow.update(this._agents.active);
+        // Hovering: switch between the status and the agent row as agents come and go
+        if (this._state === State.PEEK)
+            this._syncLayers(State.PEEK);
         if (this._state === State.IDLE && this._agentsShown())
             this.setState(State.ACTIVITY);
         else if (this._state === State.ACTIVITY && !this._agentsShown())
@@ -398,6 +409,9 @@ export class Notch {
             return [idle[0] + HOVER_GROW[0], idle[1] + HOVER_GROW[1]];
         case State.NOTIFICATION:
             return [settings.get_int('notification-width'), StateSize.notification[1]];
+        case State.ACTIVITY:
+            // An agent at work only animates the standby line
+            return idle;
         default:
             return StateSize[state];
         }
@@ -492,6 +506,13 @@ export class Notch {
         case 'panel-opacity':
             this._area.queue_repaint();
             break;
+        case 'animations':
+            this._syncActivityAnimation();
+            break;
+        case 'agent-indicator':
+        case 'agent-color':
+            this._area.queue_repaint();
+            break;
         case 'notch-floating':
         case 'notch-float-offset':
             this._relayout();
@@ -523,6 +544,7 @@ export class Notch {
         this._width.target = w;
         this._height.target = h;
 
+        this._syncActivityAnimation();
         this._clearAutoClose();
         if (state === State.STATUS)
             this._armAutoClose(this._seconds('status-seconds', Timing.statusAutoCloseMs));
@@ -754,9 +776,52 @@ export class Notch {
     }
 
     // Show the layer of the current state after the shape has started to grow
+    // Color of the agent animation: the accent, or one picked in the preferences
+    _agentColor() {
+        const choice = this._settings?.get_string('agent-color') ?? 'accent';
+        if (choice === 'teal')
+            return Color.ai;
+        if (choice === 'white')
+            return Color.menuText;
+        return ACCENTS[choice]?.color ?? this._theme?.accent.color ?? Color.accent;
+    }
+
+    _syncActivityAnimation() {
+        if (!this._activityTimeline)
+            return;
+        const run = this._state === State.ACTIVITY && St.Settings.get().enable_animations &&
+            (this._settings?.get_boolean('animations') ?? true);
+        if (run && !this._activityTimeline.is_playing())
+            this._activityTimeline.start();
+        else if (!run && this._activityTimeline.is_playing())
+            this._activityTimeline.stop();
+    }
+
+    // Hovering the notch shows the status, or the running agent when there is one
+    _layerFor(state) {
+        if (state === State.PEEK && this._agentsShown())
+            return this._activityRow.actor;
+        return this._layers[state];
+    }
+
+    _syncRowVisibility() {
+        const tall = this._height.value >= CONTENT_MIN_HEIGHT;
+        const agentPeek = this._state === State.PEEK && this._agentsShown();
+        this._activityRow.actor.visible = tall && agentPeek;
+        this._statusRow.actor.visible = tall && !agentPeek &&
+            (this._state === State.STATUS || this._state === State.PEEK);
+    }
+
     _syncLayers(previous) {
-        const previousLayer = this._layers[previous];
-        const layer = this._layers[this._state];
+        if (previous === State.PEEK) {
+            for (const row of [this._statusRow.actor, this._activityRow.actor]) {
+                row.remove_all_transitions();
+                row.opacity = 0;
+                row.visible = false;
+            }
+        }
+        const previousLayer = this._layerFor(previous);
+        const layer = this._layerFor(this._state);
         if (previousLayer && previousLayer !== layer) {
             previousLayer.remove_all_transitions();
             previousLayer.opacity = 0;
@@ -798,10 +863,7 @@ export class Notch {
             this._box?.monitorX !== monitor.x || this._box?.monitorWidth !== monitor.width ||
             this._box?.top !== top;
         if (!boxChanged) {
-            this._activityRow.actor.visible = this._state === State.ACTIVITY &&
-                this._height.value >= CONTENT_MIN_HEIGHT;
-            this._statusRow.actor.visible = (this._state === State.STATUS || this._state === State.PEEK) &&
-                this._height.value >= CONTENT_MIN_HEIGHT;
+            this._syncRowVisibility();
             this._area.queue_repaint();
             return;
         }
@@ -816,11 +878,8 @@ export class Notch {
             row.set_size(rowWidth, Math.round(STATUS_ROW_HEIGHT * scale));
             row.set_position(Math.round((width - rowWidth) / 2), 0);
         }
-        this._activityRow.actor.visible = this._state === State.ACTIVITY &&
-            this._height.value >= CONTENT_MIN_HEIGHT;
-        // Hide the row while the notch is still too short to hold it
-        this._statusRow.actor.visible = (this._state === State.STATUS || this._state === State.PEEK) &&
-            this._height.value >= CONTENT_MIN_HEIGHT;
+        // Rows stay hidden while the notch is still too short to hold them
+        this._syncRowVisibility();
 
         for (const state of EXPANDED) {
             const padding = VIEW_PADDING[state];
@@ -849,6 +908,13 @@ export class Notch {
                 accentColor: this._theme?.accent.color ?? Color.accent,
                 expanded: EXPANDED.has(this._state),
                 showCamera: false,
+                activity: this._state === State.ACTIVITY ? {
+                    style: this._settings?.get_string('agent-indicator') ?? 'sweep',
+                    phase: this._activityPhase,
+                    waiting: this._agents?.active[0]?.status === 'waiting',
+                    workColor: this._agentColor(),
+                    waitColor: this._theme?.accent.color ?? Color.accent,
+                } : null,
                 unreadDot: (this._messages?.unreadCount ?? 0) > 0,
             });
         } catch (e) {
@@ -891,6 +957,8 @@ export class Notch {
         }
         this._ticker.stop();
         this._ticker = null;
+        this._activityTimeline.stop();
+        this._activityTimeline = null;
 
         this._settings?.disconnectObject(this);
         Main.overview.searchEntry?.clutter_text.disconnectObject(this);
