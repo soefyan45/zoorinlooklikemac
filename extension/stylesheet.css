@@ -598,3 +598,18 @@
     /* half of the plate height (24 px icons + 2 × 5 px) for fully rounded ends */
     border-radius: 17px;
 }
+
+/* Spotlight: the search box centered near the top of the screen */
+.zorin-notch-spotlight {
+    padding: 10px;
+    border-radius: 22px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background-color: rgba(28, 28, 32, 0.88);
+    box-shadow: 0 20px 50px 0 rgba(0, 0, 0, 0.45);
+}
+
+.zorin-notch-spotlight.zorin-notch-light {
+    border-color: rgba(255, 255, 255, 0.75);
+    background-color: rgba(248, 248, 252, 0.88);
+    box-shadow: 0 20px 50px 0 rgba(0, 0, 0, 0.18);
+}

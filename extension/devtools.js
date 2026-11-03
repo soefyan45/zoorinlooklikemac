@@ -43,6 +43,15 @@ function countNotchActors() {
     return count;
 }
 
+async function screenshotFull(file) {
+    const monitor = Main.layoutManager.primaryMonitor;
+    const stream = Gio.File.new_for_path(file).replace(null, false, Gio.FileCreateFlags.NONE, null);
+    const shooter = new Shell.Screenshot();
+    await new Promise(resolve => shooter.screenshot_area(monitor.x, monitor.y, monitor.width,
+        monitor.height, stream, () => resolve()));
+    stream.close(null);
+}
+
 async function screenshot(file) {
     const monitor = Main.layoutManager.primaryMonitor;
     const [w, h] = SHOT_SIZE;
@@ -229,7 +238,8 @@ async function testAgents(notch, shotDir) {
     // Hovering while an agent works shows its row
     notch.setState(State.PEEK);
     await wait(SETTLE_MS);
-    check('hover shows the agent row', notch._activityRow.actor.visible && !notch._statusRow.actor.visible);
+    check('hover shows date, time, network and battery while an agent works',
+        notch._statusRow.actor.visible && !notch._activityRow.actor.visible);
     if (shotDir)
         await screenshot(`${shotDir}/activity.png`);
     notch.setState(State.IDLE);
@@ -379,12 +389,12 @@ async function testTheme(extension, shotDir) {
         notch.setState(State.PANEL);
         await wait(SETTLE_MS);
         await screenshot(`${shotDir}/panel-light.png`);
-        notch.setState(State.SEARCH);
+        notch.setState(State.IDLE);
+        notch.openSearch('te');
         await wait(SETTLE_MS);
-        notch._searchView.entry.text = 'te';
-        await wait(SETTLE_MS);
-        await screenshot(`${shotDir}/search-light.png`);
-        console.log(LOG_PREFIX, `shot search light (size=${notch.debugSize})`);
+        await screenshotFull(`${shotDir}/search-light.png`);
+        notch.spotlight.close();
+        await wait(400);
     }
     notch.setState(State.IDLE);
     settings.reset('theme');
@@ -393,12 +403,11 @@ async function testTheme(extension, shotDir) {
     check('dark theme again', !extension.notch.actor.has_style_class_name('zorin-notch-light'));
     if (shotDir) {
         const dark = extension.notch;
-        dark.setState(State.SEARCH);
+        dark.openSearch('te');
         await wait(SETTLE_MS);
-        dark._searchView.entry.text = 'te';
-        await wait(SETTLE_MS);
-        await screenshot(`${shotDir}/search-dark.png`);
-        dark.setState(State.IDLE);
+        await screenshotFull(`${shotDir}/search-dark.png`);
+        dark.spotlight.close();
+        await wait(400);
     }
     notch.freezePointer(false);
 }
@@ -427,9 +436,10 @@ async function testFloatingAndOverview(extension, shotDir) {
     Main.overview.searchEntry.set_text('ter');
     await wait(SETTLE_MS * 2);
     const current = extension.notch;
-    check('typing in the overview opens the notch search', current.state === State.SEARCH &&
-        current._searchView.entry.text === 'ter', `${current.state} "${current._searchView.entry.text}" overview=${Main.overview.visible}`);
-    current.setState(State.IDLE);
+    const view = current.spotlight.view;
+    check('typing in the overview opens spotlight', current.spotlight.isOpen && view.entry.text === 'ter',
+        `open=${current.spotlight.isOpen} "${view.entry.text}" overview=${Main.overview.visible}`);
+    current.spotlight.close();
     await wait(500);
 }
 
@@ -589,24 +599,23 @@ export async function runSelfTest(extension) {
         await wait(SETTLE_MS);
         check('bell opens the notification list', notch.state === State.LIST, notch.state);
 
-        // "Cari" opens the search in the notch with the keyboard in the entry
+        // "Search" closes the panel and opens Spotlight with the keyboard in the entry
         notch.setState(State.PANEL);
         await wait(SETTLE_MS);
-        notch.setState(State.SEARCH);
+        notch.openSearch();
         await wait(SETTLE_MS);
-        const search = notch._searchView;
+        const search = notch.spotlight.view;
+        check('spotlight opens', notch.spotlight.isOpen);
         check('search entry has keyboard focus', global.stage.key_focus === search.entry.clutter_text);
         search.entry.text = 'term';
         await wait(SETTLE_MS);
         check('search finds apps', search._results.length > 0,
             search._results.map(a => a.get_name()).join(', '));
-        if (shotDir) {
-            await screenshot(`${shotDir}/search.png`);
-            console.log(LOG_PREFIX, `shot search (size=${notch.debugSize})`);
-        }
+        if (shotDir)
+            await screenshotFull(`${shotDir}/search.png`);
         pressKey(keyboard, Clutter.KEY_Escape);
         await wait(500);
-        check('Esc closes the search', notch.state === State.IDLE, notch.state);
+        check('Esc closes spotlight', !notch.spotlight.isOpen);
         if (shotDir)
             await screenshot(`${shotDir}/panel-bell-list.png`);
         notch.setState(State.IDLE);

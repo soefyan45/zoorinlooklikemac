@@ -14,16 +14,13 @@ const SOLID_TOP = 32;
 const FADE = 40;
 const UNREAD_DOT_RADIUS = 3;
 const FLOATING_RADIUS = 22;
-// Capsule holding the agent dots under the standby line
-const CAPSULE = [40, 12];
-
 // A dot with a soft halo around it
 function glowDot(cr, x, y, r, [red, green, blue], alpha) {
-    const halo = new Cairo.RadialGradient(x, y, 0, x, y, r * 2.6);
+    const halo = new Cairo.RadialGradient(x, y, 0, x, y, r * 2.2);
     halo.addColorStopRGBA(0, red, green, blue, 0.55 * alpha);
     halo.addColorStopRGBA(1, red, green, blue, 0);
     cr.newPath();
-    cr.arc(x, y, r * 2.6, 0, 2 * Math.PI);
+    cr.arc(x, y, r * 2.2, 0, 2 * Math.PI);
     cr.setSource(halo);
     cr.fill();
     cr.newPath();
@@ -102,14 +99,10 @@ function drawActivity(cr, x, w, h, scale, {style, phase, waiting, workColor, wai
     }
 
     if (style === 'swap' || style === 'dots') {
-        // A small black capsule hanging from the line holds the dots, like a tiny notch
-        const capsuleW = CAPSULE[0] * scale;
-        const capsuleH = Math.max(CAPSULE[1] * scale, h);
+        // The dots light up inside the line, which the notch makes a slim pill for them
         const cx = x + w / 2;
-        roundedRect(cr, cx - capsuleW / 2, 0, capsuleW, capsuleH, capsuleH / 2);
-        setColor(cr, Color.notch);
-        cr.fill();
-        const cy = capsuleH / 2;
+        const cy = h / 2;
+        const r = Math.min(2.2 * scale, h * 0.3);
 
         if (style === 'swap') {
             // Two dots trading places, the one in front a little larger
@@ -120,13 +113,13 @@ function drawActivity(cr, x, w, h, scale, {style, phase, waiting, workColor, wai
                 {dx: -Math.cos(angle) * spread, depth: -Math.sin(angle), color: [1, 1, 1]},
             ].sort((a, b) => a.depth - b.depth);
             for (const dot of dots)
-                glowDot(cr, cx + dot.dx, cy, 2.4 * scale * (1 + 0.18 * dot.depth), dot.color, 0.75 + 0.25 * dot.depth);
+                glowDot(cr, cx + dot.dx, cy, r * (1 + 0.15 * dot.depth), dot.color, 0.75 + 0.25 * dot.depth);
         } else {
             // Three dots lighting up one after the other, left to right
-            const gap = 9 * scale;
+            const gap = 8 * scale;
             for (let i = 0; i < 3; i++) {
                 const wave = Math.max(0, Math.sin(phase * 2 * Math.PI / 1.2 - i * 0.75));
-                glowDot(cr, cx + (i - 1) * gap, cy, 2.3 * scale * (0.8 + 0.3 * wave), [wr, wg, wb], 0.35 + 0.65 * wave);
+                glowDot(cr, cx + (i - 1) * gap, cy, r * (0.85 + 0.25 * wave), [wr, wg, wb], 0.3 + 0.7 * wave);
             }
         }
     } else {

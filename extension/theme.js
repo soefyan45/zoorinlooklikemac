@@ -44,7 +44,8 @@ function lightCss() {
     return `
 ${VIEWS.map(v => `.zorin-notch-light .zorin-notch-${v}`).join(',\n')} { color: ${text}; }
 ${inViews('.zorin-notch-status', '.zorin-notch-icon', '.zorin-notch-status-icon', '.zorin-notch-notif-glyph',
-        '.zorin-notch-search-icon', '.zorin-notch-tray .panel-button', '.zorin-notch-tray .system-status-icon')} { color: ${text}; }
+        '.zorin-notch-search-icon', '.zorin-notch-search-glyph', '.zorin-notch-tray .panel-button',
+        '.zorin-notch-tray .system-status-icon')} { color: ${text}; }
 ${inViews('.zorin-notch-tray .panel-button')} { background-color: rgba(0, 0, 0, 0.06); }
 ${inViews('.zorin-notch-tile-subtitle', '.zorin-notch-slider-value', '.zorin-notch-group-label',
         '.zorin-notch-menu-meta', '.zorin-notch-menu-trail', '.zorin-notch-list-count', '.zorin-notch-link-button',

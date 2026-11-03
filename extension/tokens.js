@@ -65,8 +65,6 @@ export const StateSize = {
     aiNotification: [460, 192],
     wifi: [440, 282],
     power: [340, 274],
-    // Not in the Pego frames: app search opened from "Cari" in the full panel
-    search: [560, 120],
     confirm: [400, 186],
 };
 

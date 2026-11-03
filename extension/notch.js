@@ -18,8 +18,9 @@ import {NotificationSource} from './messages.js';
 import {PowerActions} from './power.js';
 import {TrayBridge} from './tray.js';
 import {AgentTracker} from './agents.js';
+import {Spotlight} from './spotlight.js';
 import {
-    ActivityRow, AgentView, ListView, NotificationView, PanelView, PowerView, SearchView, StatusRow,
+    ActivityRow, AgentView, ListView, NotificationView, PanelView, PowerView, StatusRow,
     WifiView, panelDateText,
 } from './views.js';
 
@@ -36,7 +37,6 @@ export const State = {
     WIFI: 'wifi',
     LIST: 'notificationList',
     POWER: 'power',
-    SEARCH: 'search',
     // A coding agent is working: the notch stays at status size and shows it (Pego 04)
     ACTIVITY: 'activity',
     // A coding agent finished or needs the user (Pego 08)
@@ -45,9 +45,9 @@ export const State = {
 
 // Expanded states use the large notch shape; modal ones also take keyboard and outside clicks
 const EXPANDED = new Set([
-    State.NOTIFICATION, State.PANEL, State.WIFI, State.LIST, State.POWER, State.SEARCH, State.AGENT,
+    State.NOTIFICATION, State.PANEL, State.WIFI, State.LIST, State.POWER, State.AGENT,
 ]);
-const MODAL = new Set([State.PANEL, State.WIFI, State.LIST, State.POWER, State.SEARCH]);
+const MODAL = new Set([State.PANEL, State.WIFI, State.LIST, State.POWER]);
 // A popup may only replace these states; otherwise it waits in the queue
 const INTERRUPTIBLE = new Set([State.IDLE, State.HOVER, State.PEEK, State.STATUS, State.ACTIVITY]);
 
@@ -58,6 +58,8 @@ const WIDTH_SPRING = {stiffness: 260, damping: 30};
 const HEIGHT_SPRING = {stiffness: 340, damping: 34};
 
 const POINTER_POLL_MS = 50;
+// Minimum size of the standby line while agent dots light up inside it
+const DOTS_LINE = [60, 8];
 // The hover line is this much larger than the standby line (design: 120×4 -> 160×6)
 const HOVER_GROW = [40, 2];
 // Extra room around the peeking notch before it falls back to the hover line
@@ -76,8 +78,6 @@ const VIEW_PADDING = {
     [State.WIFI]: {x: 22, top: 0, bottom: 20},
     [State.LIST]: {x: 30, top: 0, bottom: 24},
     [State.POWER]: {x: 20, top: 16, bottom: 18},
-    // Spotlight-like search: the entry sits right at the top
-    [State.SEARCH]: {x: 14, top: 12, bottom: 10},
     [State.AGENT]: {x: 22, top: 14, bottom: 18},
 };
 // How long an agent popup stays when nobody looks at it
@@ -193,7 +193,7 @@ export class Notch {
             openWifi: () => this.setState(State.WIFI),
             back: () => this.setState(State.PANEL),
             showApps: () => this._closeThen(() => Main.overview.showApps()),
-            search: () => this.setState(State.SEARCH),
+            search: () => this._closeThen(() => this.openSearch()),
             openSettings: () => this._closeThen(() => this._bridge.openSettings()),
             openPreferences: () => this._closeThen(() => this._openPreferences?.()),
             openWifiSettings: () => this._closeThen(() => this._bridge.openSettings('gnome-wifi-panel.desktop')),
@@ -229,22 +229,8 @@ export class Notch {
         this._wifiView = new WifiView(this._bridge, actions);
         this._notificationView = new NotificationView(notificationActions);
         this._listView = new ListView(this._messages, notificationActions);
-        this._searchView = new SearchView({
-            launch: app => this._closeThen(() => app.activate()),
-            searchInOverview: query => this._closeThen(() => {
-                Main.overview.show();
-                Main.overview.searchEntry?.set_text(query);
-            }),
-        });
-        // New result rows get their CSS on the next frame; measure again then
-        this._searchView.entry.clutter_text.connect('text-changed', () => {
-            this._fitHeight();
-            global.compositor.get_laters().add(Meta.LaterType.BEFORE_REDRAW, () => {
-                if (this.actor && this._state === State.SEARCH)
-                    this._fitHeight();
-                return GLib.SOURCE_REMOVE;
-            });
-        });
+        // App search lives in a Spotlight box centered on screen, not in the notch
+        this._spotlight = new Spotlight({theme: this._theme});
         this._activityRow = new ActivityRow();
         this._agentView = new AgentView({
             open: entry => this._closeThen(() => this._agents.focus(entry)),
@@ -268,7 +254,6 @@ export class Notch {
             [State.WIFI]: this._wifiView.actor,
             [State.LIST]: this._listView.actor,
             [State.POWER]: this._powerView.actor,
-            [State.SEARCH]: this._searchView.actor,
             [State.AGENT]: this._agentView.actor,
         };
         for (const layer of Object.values(this._layers)) {
@@ -296,7 +281,6 @@ export class Notch {
         this._panelView.statusRow.update({clock: panelDateText(clock), networkIcon, battery});
         this._wifiView.statusRow.update({clock, networkIcon, battery});
         this._listView.statusRow.update({clock, networkIcon, battery});
-        this._searchView.statusRow.update({clock, networkIcon, battery});
     }
 
     _syncViews() {
@@ -305,7 +289,6 @@ export class Notch {
             [State.WIFI]: this._wifiView,
             [State.LIST]: this._listView,
             [State.POWER]: this._powerView,
-            [State.SEARCH]: this._searchView,
         }[this._state];
         if (!view)
             return;
@@ -325,9 +308,6 @@ export class Notch {
         if (!this._activityRow)
             return;
         this._activityRow.update(this._agents.active);
-        // Hovering: switch between the status and the agent row as agents come and go
-        if (this._state === State.PEEK)
-            this._syncLayers(State.PEEK);
         if (this._state === State.IDLE && this._agentsShown())
             this.setState(State.ACTIVITY);
         else if (this._state === State.ACTIVITY && !this._agentsShown())
@@ -409,9 +389,11 @@ export class Notch {
             return [idle[0] + HOVER_GROW[0], idle[1] + HOVER_GROW[1]];
         case State.NOTIFICATION:
             return [settings.get_int('notification-width'), StateSize.notification[1]];
-        case State.ACTIVITY:
-            // An agent at work only animates the standby line
-            return idle;
+        case State.ACTIVITY: {
+            // An agent at work only animates the standby line; dots need a slim pill
+            const dots = ['swap', 'dots'].includes(settings.get_string('agent-indicator'));
+            return dots ? [Math.max(idle[0], DOTS_LINE[0]), Math.max(idle[1], DOTS_LINE[1])] : idle;
+        }
         default:
             return StateSize[state];
         }
@@ -434,17 +416,18 @@ export class Notch {
             this.actor.add_style_class_name('zorin-notch-light');
         else
             this.actor.remove_style_class_name('zorin-notch-light');
+        this._spotlight?.syncTheme();
         this._area.queue_repaint();
         this._fitHeight();
     }
 
-    // Open the search with some text already typed (from the overview)
+    // Open Spotlight, with some text already typed (from the overview)
     openSearch(text = '') {
-        this.setState(State.SEARCH);
-        if (text) {
-            this._searchView.entry.text = text;
-            this._searchView.entry.clutter_text.set_cursor_position(-1);
-        }
+        this._spotlight.open(text);
+    }
+
+    get spotlight() {
+        return this._spotlight;
     }
 
     _onOverviewTyping() {
@@ -510,9 +493,14 @@ export class Notch {
             this._syncActivityAnimation();
             break;
         case 'agent-indicator':
-        case 'agent-color':
+        case 'agent-color': {
+            const [w, h] = this._sizeOf(this._state);
+            this._width.target = w;
+            this._height.target = h;
+            this._wake();
             this._area.queue_repaint();
             break;
+        }
         case 'notch-floating':
         case 'notch-float-offset':
             this._relayout();
@@ -567,12 +555,7 @@ export class Notch {
         if (previous === State.AGENT)
             this._agentView.clear();
         this._syncViews();
-        if (state === State.SEARCH)
-            this._searchView.reset();
         this._setModal(MODAL.has(state));
-        // Typing goes straight into the search entry
-        if (state === State.SEARCH && this._grab)
-            this._searchView.focus();
 
         // Queued popups wait for the notch to be free
         if (INTERRUPTIBLE.has(state) && this._popupQueue.length && !this._popupId) {
@@ -797,18 +780,15 @@ export class Notch {
             this._activityTimeline.stop();
     }
 
-    // Hovering the notch shows the status, or the running agent when there is one
     _layerFor(state) {
-        if (state === State.PEEK && this._agentsShown())
-            return this._activityRow.actor;
         return this._layers[state];
     }
 
+    // Hovering the notch always shows date, time, network and battery (agents show on the line)
     _syncRowVisibility() {
         const tall = this._height.value >= CONTENT_MIN_HEIGHT;
-        const agentPeek = this._state === State.PEEK && this._agentsShown();
-        this._activityRow.actor.visible = tall && agentPeek;
-        this._statusRow.actor.visible = tall && !agentPeek &&
+        this._activityRow.actor.visible = false;
+        this._statusRow.actor.visible = tall &&
             (this._state === State.STATUS || this._state === State.PEEK);
     }
 
@@ -987,7 +967,7 @@ export class Notch {
         this._notificationView.destroy();
         this._listView.destroy();
         this._powerView.destroy();
-        this._searchView.destroy();
+        this._spotlight.destroy();
         this._agents.destroy();
         this._activityRow.destroy();
         this._agentView.destroy();
