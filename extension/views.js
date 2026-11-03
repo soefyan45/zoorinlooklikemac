@@ -9,6 +9,7 @@ import St from 'gi://St';
 
 import {Slider} from 'resource:///org/gnome/shell/ui/slider.js';
 
+import {_, agentMessage} from './i18n.js';
 import {relativeTime} from './messages.js';
 
 const MAX_OTHER_NETWORKS = 3;
@@ -128,7 +129,7 @@ class Tile {
         else
             this._circle.remove_style_pseudo_class('checked');
         this._circle.child.icon_name = this._control.iconName || this._fallbackIcon;
-        this._subtitleLabel.text = this._control.subtitle || (checked ? 'Aktif' : 'Mati');
+        this._subtitleLabel.text = this._control.subtitle || (checked ? _('On') : _('Off'));
     }
 }
 
@@ -193,35 +194,35 @@ export class PanelView {
         this._tiles = [
             new Tile(bridge.wifi, 'Wi-Fi', 'network-wireless-symbolic', actions.openWifi),
             new Tile(bridge.bluetooth, 'Bluetooth', 'bluetooth-active-symbolic'),
-            new Tile(bridge.darkMode, 'Mode gelap', 'dark-mode-symbolic'),
-            new Tile(bridge.dnd, 'Senyap', 'notifications-disabled-symbolic'),
+            new Tile(bridge.darkMode, _('Dark mode'), 'dark-mode-symbolic'),
+            new Tile(bridge.dnd, _('Do not disturb'), 'notifications-disabled-symbolic'),
         ];
         this._tiles.forEach(tile => tiles.add_child(tile.actor));
 
         const sliders = new St.BoxLayout({style_class: 'zorin-notch-sliders', vertical: true});
         this._sliders = [
-            new SliderRow(bridge.volume, 'audio-volume-high-symbolic', 'Volume'),
-            new SliderRow(bridge.brightness, 'display-brightness-symbolic', 'Kecerahan'),
+            new SliderRow(bridge.volume, 'audio-volume-high-symbolic', _('Volume')),
+            new SliderRow(bridge.brightness, 'display-brightness-symbolic', _('Brightness')),
         ];
         this._sliders.forEach(row => sliders.add_child(row.actor));
 
         const actionRow = new St.BoxLayout({style_class: 'zorin-notch-actions', x_expand: true});
         const left = new St.BoxLayout({style_class: 'zorin-notch-actions-group', x_expand: true});
-        left.add_child(pillButton('view-app-grid-symbolic', 'Apps', actions.showApps));
-        left.add_child(pillButton('system-search-symbolic', 'Cari', actions.search));
+        left.add_child(pillButton('view-app-grid-symbolic', _('Apps'), actions.showApps));
+        left.add_child(pillButton('system-search-symbolic', _('Search'), actions.search));
         const right = new St.BoxLayout({style_class: 'zorin-notch-actions-group'});
         // Notification list (07) at any time, not only when the unread dot is shown
-        this._bell = roundButton('notification-symbolic', 'Notifikasi', actions.openNotifications);
+        this._bell = roundButton('notification-symbolic', _('Notifications'), actions.openNotifications);
         this._bell.child.fallback_icon_name = 'preferences-system-notifications-symbolic';
         right.add_child(this._bell);
         // Zorin Notch preferences (dock and notch), next to GNOME Settings
-        const prefs = roundButton('preferences-desktop-appearance-symbolic', 'Pengaturan Zorin Notch',
+        const prefs = roundButton('preferences-desktop-appearance-symbolic', _('Zorin Notch settings'),
             actions.openPreferences);
         prefs.child.fallback_icon_name = 'emblem-system-symbolic';
         right.add_child(prefs);
-        right.add_child(roundButton('emblem-system-symbolic', 'Pengaturan', actions.openSettings));
-        right.add_child(roundButton('system-lock-screen-symbolic', 'Kunci layar', actions.lockScreen));
-        right.add_child(roundButton('system-shutdown-symbolic', 'Daya', actions.openPower));
+        right.add_child(roundButton('emblem-system-symbolic', _('Settings'), actions.openSettings));
+        right.add_child(roundButton('system-lock-screen-symbolic', _('Lock screen'), actions.lockScreen));
+        right.add_child(roundButton('system-shutdown-symbolic', _('Power'), actions.openPower));
         actionRow.add_child(left);
         actionRow.add_child(right);
 
@@ -288,7 +289,7 @@ export class WifiView {
         this.statusRow = new StatusRow('zorin-notch-status zorin-notch-wifi-status');
 
         const head = new St.BoxLayout({style_class: 'zorin-notch-wifi-head'});
-        const back = roundButton('pan-start-symbolic', 'Kembali', actions.back);
+        const back = roundButton('pan-start-symbolic', _('Back'), actions.back);
         back.add_style_class_name('small');
         head.add_child(back);
         head.add_child(label('Wi-Fi', 'zorin-notch-view-title', {x_expand: true}));
@@ -323,12 +324,12 @@ export class WifiView {
         const others = networks.filter(n => !n.active).slice(0, MAX_OTHER_NETWORKS);
 
         if (active.length) {
-            this._list.add_child(label('Tersambung', 'zorin-notch-group-label'));
+            this._list.add_child(label(_('Connected'), 'zorin-notch-group-label'));
             for (const network of active) {
                 this._list.add_child(menuItem({
                     iconName: network.iconName,
                     text: network.name,
-                    meta: network.secure ? 'Aman' : 'Terbuka',
+                    meta: network.secure ? _('Secured') : _('Unsecured'),
                     trailIcon: 'object-select-symbolic',
                     accent: 'accent',
                     bold: true,
@@ -337,22 +338,22 @@ export class WifiView {
             }
         }
         if (others.length) {
-            this._list.add_child(label('Jaringan lain', 'zorin-notch-group-label'));
+            this._list.add_child(label(_('Other networks'), 'zorin-notch-group-label'));
             for (const network of others) {
                 this._list.add_child(menuItem({
                     iconName: network.iconName,
                     text: network.name,
-                    meta: network.secure ? 'Terkunci' : 'Terbuka',
+                    meta: network.secure ? _('Locked') : _('Unsecured'),
                     onClick: () => network.activate(),
                 }));
             }
         }
         if (!enabled)
-            this._list.add_child(label('Wi-Fi mati', 'zorin-notch-group-label'));
+            this._list.add_child(label(_('Wi-Fi is off'), 'zorin-notch-group-label'));
 
         this._list.add_child(menuItem({
             iconName: 'emblem-system-symbolic',
-            text: 'Pengaturan Wi-Fi lainnya',
+            text: _('More Wi-Fi settings'),
             trailIcon: 'pan-end-symbolic',
             onClick: this._actions.openWifiSettings,
         }));
@@ -401,7 +402,7 @@ export class NotificationView {
         const [action] = notification.actions ?? [];
         const button = new St.Button({
             style_class: 'zorin-notch-notif-button',
-            label: action ? plain(action.label) : 'Buka',
+            label: action ? plain(action.label) : _('Open'),
             y_align: Clutter.ActorAlign.CENTER,
             can_focus: true,
         });
@@ -485,12 +486,12 @@ export class ListView {
         this.statusRow = new StatusRow('zorin-notch-status zorin-notch-panel-status');
 
         const head = new St.BoxLayout({style_class: 'zorin-notch-list-head'});
-        head.add_child(label('Notifikasi', 'zorin-notch-view-title'));
+        head.add_child(label(_('Notifications'), 'zorin-notch-view-title'));
         this._count = label('', 'zorin-notch-list-count', {x_expand: true});
         head.add_child(this._count);
         const clear = new St.Button({
             style_class: 'zorin-notch-link-button',
-            label: 'Bersihkan semua',
+            label: _('Clear all'),
             can_focus: true,
         });
         clear.connect('clicked', () => actions.clearAll());
@@ -506,13 +507,13 @@ export class ListView {
     update() {
         const notifications = this._source.list();
         const unread = this._source.unreadCount;
-        this._count.text = unread ? `${unread} baru` : '';
+        this._count.text = unread ? _('{0} new', unread) : '';
 
         this._rows.destroy_all_children();
         for (const notification of notifications.slice(0, MAX_LIST_ROWS))
             this._rows.add_child(notificationRow(notification, this._actions));
         if (!notifications.length)
-            this._rows.add_child(label('Tidak ada notifikasi', 'zorin-notch-list-empty'));
+            this._rows.add_child(label(_('No notifications'), 'zorin-notch-list-empty'));
     }
 
     destroy() {
@@ -533,7 +534,7 @@ export class PowerView {
         this.actor = new St.BoxLayout({style_class: 'zorin-notch-power', vertical: true});
 
         const head = new St.BoxLayout({style_class: 'zorin-notch-power-head'});
-        head.add_child(label('Daya', 'zorin-notch-view-title', {x_expand: true}));
+        head.add_child(label(_('Power'), 'zorin-notch-view-title', {x_expand: true}));
         this._batteryLabel = label('', 'zorin-notch-list-count');
         head.add_child(this._batteryLabel);
         this.actor.add_child(head);
@@ -544,19 +545,19 @@ export class PowerView {
             return button;
         };
         this._items = [
-            item('lock', 'system-lock-screen-symbolic', 'Kunci layar', {meta: 'Super + L'}),
-            item('suspend', 'weather-clear-night-symbolic', 'Tidur'),
-            item('logout', 'system-log-out-symbolic', 'Keluar', {meta: 'Tutup sesi'}),
+            item('lock', 'system-lock-screen-symbolic', _('Lock screen'), {meta: 'Super + L'}),
+            item('suspend', 'weather-clear-night-symbolic', _('Suspend')),
+            item('logout', 'system-log-out-symbolic', _('Log out'), {meta: _('End session')}),
             new St.Widget({style_class: 'zorin-notch-divider', x_expand: true}),
-            item('restart', 'system-reboot-symbolic', 'Mulai ulang'),
-            item('poweroff', 'system-shutdown-symbolic', 'Matikan', {accent: 'danger', bold: true}),
+            item('restart', 'system-reboot-symbolic', _('Restart')),
+            item('poweroff', 'system-shutdown-symbolic', _('Power off'), {accent: 'danger', bold: true}),
         ];
         this._items.forEach(child => this.actor.add_child(child));
     }
 
     update() {
         const percentage = this._battery();
-        this._batteryLabel.text = percentage === null ? '' : `Baterai ${percentage}%`;
+        this._batteryLabel.text = percentage === null ? '' : _('Battery {0}%', percentage);
         for (const child of this._items) {
             if (child.actionId)
                 child.visible = this._power.can(child.actionId);
@@ -573,13 +574,13 @@ export class PowerView {
 }
 
 const AGENT_STATUS_TEXT = {
-    working: 'bekerja…',
-    waiting: 'butuh kamu',
-    done: 'selesai',
+    working: 'working…',
+    waiting: 'needs you',
+    done: 'done',
 };
 const AGENT_TITLE = {
-    waiting: 'Butuh izin atau jawaban',
-    done: 'Selesai',
+    waiting: 'Needs permission or input',
+    done: 'Finished',
 };
 
 /**
@@ -606,7 +607,7 @@ export class ActivityRow {
             return;
         const more = sessions.length > 1 ? ` +${sessions.length - 1}` : '';
         this._label.text = `${first.name}${first.project ? ` · ${first.project}` : ''}${more}`;
-        this._state.text = AGENT_STATUS_TEXT[first.status] ?? '';
+        this._state.text = _(AGENT_STATUS_TEXT[first.status] ?? '');
         const waiting = first.status === 'waiting';
         if (waiting)
             this._dot.add_style_pseudo_class('waiting');
@@ -659,23 +660,23 @@ export class AgentView {
             y_align: Clutter.ActorAlign.CENTER,
         }));
         head.add_child(label(entry.project || 'agent', 'zorin-notch-agent-source', {x_expand: true}));
-        head.add_child(label('sekarang', 'zorin-notch-agent-source'));
+        head.add_child(label(_('now'), 'zorin-notch-agent-source'));
         this.actor.add_child(head);
 
-        this.actor.add_child(label(AGENT_TITLE[entry.status] ?? entry.status, 'zorin-notch-agent-title'));
+        this.actor.add_child(label(_(AGENT_TITLE[entry.status] ?? entry.status), 'zorin-notch-agent-title'));
         if (entry.message)
-            this.actor.add_child(label(entry.message, 'zorin-notch-agent-message'));
+            this.actor.add_child(label(agentMessage(entry.message), 'zorin-notch-agent-message'));
 
         const actionsRow = new St.BoxLayout({style_class: 'zorin-notch-agent-actions'});
         const open = new St.Button({style_class: 'zorin-notch-ai-button', can_focus: true});
         const openBox = new St.BoxLayout({style_class: 'zorin-notch-pill-content'});
         openBox.add_child(icon('utilities-terminal-symbolic', 'zorin-notch-ai-button-icon'));
-        openBox.add_child(label('Buka', 'zorin-notch-ai-button-label'));
+        openBox.add_child(label(_('Open'), 'zorin-notch-ai-button-label'));
         open.child = openBox;
         open.connect('clicked', () => this._actions.open(entry));
         const skip = new St.Button({
             style_class: 'zorin-notch-link-button',
-            label: 'Abaikan',
+            label: _('Dismiss'),
             x_expand: true,
             x_align: Clutter.ActorAlign.END,
             can_focus: true,
@@ -714,7 +715,7 @@ export class SearchView {
 
         this.entry = new St.Entry({
             style_class: 'zorin-notch-search-entry',
-            hint_text: 'Cari aplikasi…',
+            hint_text: _('Search apps…'),
             can_focus: true,
             x_expand: true,
             primary_icon: new St.Icon({icon_name: 'system-search-symbolic', style_class: 'zorin-notch-search-icon'}),
@@ -783,10 +784,10 @@ export class SearchView {
 
         if (query) {
             if (!this._results.length)
-                this._list.add_child(label('Tidak ada aplikasi yang cocok', 'zorin-notch-list-empty'));
+                this._list.add_child(label(_('No matching apps'), 'zorin-notch-list-empty'));
             this._list.add_child(menuItem({
                 iconName: 'system-search-symbolic',
-                text: `Cari "${query}" di Overview`,
+                text: _('Search “{0}” in Overview', query),
                 trailIcon: 'pan-end-symbolic',
                 onClick: () => this._actions.searchInOverview(query),
             }));

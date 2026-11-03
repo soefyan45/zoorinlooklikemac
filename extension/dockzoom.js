@@ -35,11 +35,9 @@ const WAIT_TRIES = 60;
 const DOCK_STYLE_CLASS = 'zorin-notch-dock';
 // Horizontal room around each icon. zorin-taskbar uses 4 px margin + 8 px padding per side;
 // the vertical padding (which sets the icon size) is kept as is.
-const ICON_MARGIN_X = 1;
-const ICON_PADDING_X = 3;
-// Room between the icons and the edge of the glass plate
-const PLATE_PAD_X = 6;
-const PLATE_PAD_Y = 5;
+const DEFAULT_ICON_SPACING = 4;
+// Room between the icons and the edge of the glass plate (vertical is 5/6 of horizontal)
+const DEFAULT_PLATE_PADDING = 6;
 
 // Pointer position as the shell's input sees it (follows virtual devices too)
 function pointerPosition() {
@@ -56,6 +54,22 @@ const AUTOHIDE_BEHAVIOUR = {
     'focused-window': 'FOCUSED_WINDOWS',
     'maximized-window': 'MAXIMIZED_WINDOWS',
 };
+
+// zorin-taskbar applies a new size live only through panel-sizes (JSON per monitor);
+// panel-size is just the fallback read when a panel is created. Write both.
+function setPanelSizes(taskbar, size) {
+    let sizes = {};
+    let positions = {};
+    try {
+        sizes = JSON.parse(taskbar.get_string('panel-sizes') || '{}');
+        positions = JSON.parse(taskbar.get_string('panel-positions') || '{}');
+    } catch {}
+    // Every monitor key the taskbar already knows, plus index 0 for the primary monitor
+    for (const key of new Set([...Object.keys(sizes), ...Object.keys(positions), '0']))
+        sizes[key] = size;
+    taskbar.set_int('panel-size', size);
+    taskbar.set_string('panel-sizes', JSON.stringify(sizes));
+}
 
 function taskbarSettings() {
     const schema = Gio.SettingsSchemaSource.get_default()?.lookup(TASKBAR_SCHEMA, true);
@@ -103,7 +117,8 @@ export class DockZoom {
             break;
         }
         case 'dock-size':
-            taskbar?.set_int('panel-size', this._settings.get_int('dock-size'));
+            if (taskbar)
+                setPanelSizes(taskbar, this._settings.get_int('dock-size'));
             break;
         case 'dock-margin':
             taskbar?.set_int('panel-margin', this._settings.get_int('dock-margin'));
@@ -115,7 +130,24 @@ export class DockZoom {
         case 'dock-glass-opacity':
             this._plates.forEach(({plate}) => this._stylePlate(plate));
             break;
+        case 'dock-icon-spacing':
+            this._watched.forEach(({taskbar: t}) => this._compactAll(t, true));
+            break;
+        case 'dock-plate-padding':
+            this._plates.forEach(({plate, taskbar: t, anchor}) => this._syncPlate(plate, t, anchor));
+            break;
         }
+    }
+
+    // Horizontal room on each side of an icon
+    get _iconSpacing() {
+        return this._settings?.get_int('dock-icon-spacing') ?? DEFAULT_ICON_SPACING;
+    }
+
+    // [horizontal, vertical] room between the icons and the edge of the glass
+    get _platePadding() {
+        const x = this._settings?.get_int('dock-plate-padding') ?? DEFAULT_PLATE_PADDING;
+        return [x, Math.max(2, Math.round(x * 5 / 6))];
     }
 
     get _zoomEnabled() {
@@ -125,9 +157,11 @@ export class DockZoom {
     // Glass tint with the opacity from the preferences (the CSS class holds edge and radius)
     _stylePlate(plate) {
         const alpha = (this._settings?.get_double('dock-glass-opacity') ?? 0.36).toFixed(2);
-        plate.set_style(alpha > 0
+        // Fully rounded ends whatever the plate height
+        const radius = `border-radius: ${Math.round((plate.height || 34) / 2)}px;`;
+        plate.set_style(radius + (alpha > 0
             ? `background-gradient-start: rgba(36, 48, 68, ${alpha}); background-gradient-end: rgba(20, 30, 48, ${alpha});`
-            : 'background-gradient-direction: none; border-color: transparent;');
+            : 'background-gradient-direction: none; border-color: transparent;'));
     }
 
     _stopWaiting() {
@@ -204,7 +238,7 @@ export class DockZoom {
         // Auto hide slides the panel box out of the screen: the plate slides with it
         const binding = anchor.bind_property('translation-y', plate, 'translation-y',
             GObject.BindingFlags.SYNC_CREATE);
-        this._plates.set(panel, {plate, binding, anchor});
+        this._plates.set(panel, {plate, binding, anchor, taskbar});
 
         const sync = () => this._syncPlate(plate, taskbar, anchor);
         // Icons coming and going resize the box; the dock re-centers by moving the panel
@@ -224,25 +258,33 @@ export class DockZoom {
         const [x, y] = box.get_transformed_position();
         const [w, h] = box.get_transformed_size();
         const iconSize = (taskbar.iconSize || 24) * scale;
-        const height = Math.round(iconSize + 2 * PLATE_PAD_Y * scale);
+        const [padX, padY] = this._platePadding;
+        const height = Math.round(iconSize + 2 * padY * scale);
         // The box position includes the auto-hide slide, which the plate gets from its binding
         const baseY = y - anchor.translation_y;
-        plate.set_position(Math.round(x - PLATE_PAD_X * scale), Math.round(baseY + (h - height) / 2));
-        plate.set_size(Math.round(w + 2 * PLATE_PAD_X * scale), height);
+        const resized = plate.height !== height;
+        plate.set_position(Math.round(x - padX * scale), Math.round(baseY + (h - height) / 2));
+        plate.set_size(Math.round(w + 2 * padX * scale), height);
+        if (resized)
+            this._stylePlate(plate);
         plate.show();
     }
 
-    // Narrower dock: less horizontal margin and padding around each icon
-    _compactAll(taskbar) {
+    // Narrower dock: the spacing from the preferences instead of zorin-taskbar's 12 px per side.
+    // force re-applies it to icons already done (the spacing changed).
+    _compactAll(taskbar, force = false) {
+        const spacing = this._iconSpacing;
+        const margin = Math.min(1, spacing);
         for (const icon of this._icons(taskbar)) {
             const container = icon._iconContainer;
-            if (!container || this._compacted.has(icon))
+            if (!container || (this._compacted.has(icon) && !force))
                 continue;
-            const original = {icon: icon.get_style(), container: container.get_style()};
+            if (!this._compacted.has(icon))
+                this._compacted.set(icon, {icon: icon.get_style(), container: container.get_style()});
+            const original = this._compacted.get(icon);
             const vertical = /padding:\s*([\d.]+)px/.exec(original.container ?? '')?.[1] ?? '8';
-            icon.set_style(`padding: 0 ${ICON_MARGIN_X}px;`);
-            container.set_style(`padding: ${vertical}px ${ICON_PADDING_X}px;`);
-            this._compacted.set(icon, original);
+            icon.set_style(`padding: 0 ${margin}px;`);
+            container.set_style(`padding: ${vertical}px ${spacing - margin}px;`);
         }
     }
 

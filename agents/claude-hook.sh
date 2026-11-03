@@ -15,11 +15,11 @@ IFS=$'\t' read -r event session cwd tool message <<<"$(
 )"
 
 case "$event" in
-    UserPromptSubmit) state=working; text="Memproses prompt" ;;
-    PreToolUse | PostToolUse) state=working; text="${tool:+Menjalankan $tool}" ;;
+    UserPromptSubmit) state=working; text="Processing prompt" ;;
+    PreToolUse | PostToolUse) state=working; text="${tool:+Running $tool}" ;;
     Notification) state=waiting; text="$message" ;;
-    PermissionRequest) state=waiting; text="Butuh izin${tool:+ untuk $tool}" ;;
-    Stop) state=done; text="Giliran Claude selesai" ;;
+    PermissionRequest) state=waiting; text="Needs permission${tool:+ for $tool}" ;;
+    Stop) state=done; text="Claude finished its turn" ;;
     SessionEnd) state=end; text="" ;;
     *) exit 0 ;;
 esac

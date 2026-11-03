@@ -10,6 +10,7 @@ import {InjectionManager} from 'resource:///org/gnome/shell/extensions/extension
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import * as MessageTray from 'resource:///org/gnome/shell/ui/messageTray.js';
 
+import {_} from './i18n.js';
 import {LOG_PREFIX, trace} from './log.js';
 
 
@@ -102,16 +103,16 @@ export class NotificationSource {
     }
 }
 
-// "sekarang", "5 mnt", "2 jam", otherwise the date
+// "now", "5 min", "2 h" (translated), otherwise the date
 export function relativeTime(datetime) {
     if (!datetime)
         return '';
     const seconds = Math.max(0, Math.floor(Date.now() / 1000) - datetime.to_unix());
     if (seconds < 60)
-        return 'sekarang';
+        return _('now');
     if (seconds < 3600)
-        return `${Math.floor(seconds / 60)} mnt`;
+        return _('{0} min', Math.floor(seconds / 60));
     if (seconds < 86400)
-        return `${Math.floor(seconds / 3600)} jam`;
+        return _('{0} h', Math.floor(seconds / 3600));
     return datetime.to_local().format('%-d %b');
 }

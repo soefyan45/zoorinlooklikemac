@@ -1,0 +1,145 @@
+// Translations. English is the default and also the key: _('Dark mode') returns the English
+// text, or its translation for the language chosen in the preferences ("language" key).
+// Placeholders are {0}, {1}, ...: _('Battery {0}%', 82).
+//
+// No GNOME Shell imports here: the preferences window uses this module too.
+
+const STRINGS = {
+    id: {
+        // Panel
+        'On': 'Aktif',
+        'Off': 'Mati',
+        'Dark mode': 'Mode gelap',
+        'Do not disturb': 'Senyap',
+        'Brightness': 'Kecerahan',
+        'Search': 'Cari',
+        'Notifications': 'Notifikasi',
+        'Zorin Notch settings': 'Pengaturan Zorin Notch',
+        'Settings': 'Pengaturan',
+        'Lock screen': 'Kunci layar',
+        'Power': 'Daya',
+        // Wi-Fi
+        'Back': 'Kembali',
+        'Connected': 'Tersambung',
+        'Secured': 'Aman',
+        'Unsecured': 'Terbuka',
+        'Locked': 'Terkunci',
+        'Other networks': 'Jaringan lain',
+        'Wi-Fi is off': 'Wi-Fi mati',
+        'More Wi-Fi settings': 'Pengaturan Wi-Fi lainnya',
+        // Notifications
+        'Open': 'Buka',
+        'Clear all': 'Bersihkan semua',
+        '{0} new': '{0} baru',
+        'No notifications': 'Tidak ada notifikasi',
+        'now': 'sekarang',
+        '{0} min': '{0} mnt',
+        '{0} h': '{0} jam',
+        // Power
+        'Battery {0}%': 'Baterai {0}%',
+        'Suspend': 'Tidur',
+        'Log out': 'Keluar',
+        'End session': 'Tutup sesi',
+        'Restart': 'Mulai ulang',
+        'Power off': 'Matikan',
+        // Agents
+        'working…': 'bekerja…',
+        'needs you': 'butuh kamu',
+        'done': 'selesai',
+        'Needs permission or input': 'Butuh izin atau jawaban',
+        'Finished': 'Selesai',
+        'Dismiss': 'Abaikan',
+        'Processing prompt': 'Memproses prompt',
+        'Running {0}': 'Menjalankan {0}',
+        'Needs permission': 'Butuh izin',
+        'Needs permission for {0}': 'Butuh izin untuk {0}',
+        'Waiting for an answer': 'Menunggu jawaban',
+        '{0} finished its turn': 'Giliran {0} selesai',
+        'Stopped with an error': 'Berhenti karena error',
+        // Search
+        'Search apps…': 'Cari aplikasi…',
+        'No matching apps': 'Tidak ada aplikasi yang cocok',
+        'Search “{0}” in Overview': 'Cari “{0}” di Overview',
+
+        // Preferences window
+        'Behavior': 'Perilaku',
+        'Appearance': 'Tampilan',
+        'Language': 'Bahasa',
+        'Language of the notch and this window; the window updates when reopened':
+            'Bahasa notch dan jendela ini; jendela ikut berubah saat dibuka lagi',
+        'The dock uses zorin-taskbar; these settings are passed on to it.':
+            'Dock memakai zorin-taskbar; pengaturan ini diteruskan ke sana.',
+        'Auto hide': 'Sembunyikan otomatis',
+        'The dock slides off the screen and comes back when the pointer reaches the bottom':
+            'Dock turun keluar layar dan muncul lagi saat kursor ke bawah',
+        'When windows cover the dock': 'Saat jendela menutupi dock',
+        'When the active window covers the dock': 'Saat jendela aktif menutupi dock',
+        'Only for maximized windows': 'Hanya saat jendela maksimal',
+        'Icon zoom': 'Efek zoom ikon',
+        'Icons under the pointer grow, like on macOS': 'Ikon di bawah kursor membesar seperti di macOS',
+        'Dock size': 'Ukuran dock',
+        'Height in pixels; the icon size follows': 'Tinggi dalam piksel; ukuran ikon ikut berubah',
+        'Icon spacing': 'Jarak antar ikon',
+        'In pixels, on each side of an icon': 'Dalam piksel, di tiap sisi ikon',
+        'Glass padding': 'Ruang tepi kaca',
+        'In pixels, between the icons and the edge of the glass':
+            'Dalam piksel, antara ikon dan tepi latar kaca',
+        'Distance from the bottom': 'Jarak dari bawah layar',
+        'In pixels': 'Dalam piksel',
+        'Glass opacity': 'Kepekatan kaca',
+        'In percent; 0 = no background': 'Dalam persen; 0 = tanpa latar',
+        'Notification time': 'Lama notifikasi',
+        'Seconds before a notification turns back into the line':
+            'Detik sebelum notifikasi kembali jadi garis',
+        'Status time': 'Lama status',
+        'Seconds before a clicked status closes by itself':
+            'Detik sebelum status yang diklik menutup sendiri',
+        'AI agents in the notch': 'Agent AI di notch',
+        'Claude Code and opencode: working, needs permission, finished':
+            'Status Claude Code dan opencode: sedang bekerja, butuh izin, selesai',
+        'Standby line width': 'Lebar garis standby',
+        'In pixels; it grows by 40 px when the pointer comes near':
+            'Dalam piksel; saat kursor mendekat garis melebar 40 px',
+        'Standby line thickness': 'Tebal garis standby',
+        'Notification width': 'Lebar notifikasi',
+        'In pixels; width of the notch when it shows a notification':
+            'Dalam piksel; lebar notch saat menampilkan notifikasi',
+        'Panel opacity': 'Kepekatan panel',
+        'In percent; full panel, Wi-Fi, notifications': 'Dalam persen; panel penuh, Wi-Fi, notifikasi',
+        'Animations': 'Animasi',
+        'Off = the notch changes size at once, without springs':
+            'Mati = notch langsung berubah ukuran tanpa pegas',
+    },
+};
+
+export const LANGUAGES = [
+    ['en', 'English'],
+    ['id', 'Bahasa Indonesia'],
+];
+
+let current = 'en';
+
+export function setLanguage(language) {
+    current = language === 'en' || STRINGS[language] ? language : 'en';
+}
+
+export function _(text, ...args) {
+    const translated = STRINGS[current]?.[text] ?? text;
+    return args.length ? translated.replace(/\{(\d+)\}/g, (match, i) => String(args[i] ?? match)) : translated;
+}
+
+// Agent hooks send English messages; translate the ones they use
+const AGENT_PATTERNS = [
+    [/^Running (.+)$/, 'Running {0}'],
+    [/^Needs permission for (.+)$/, 'Needs permission for {0}'],
+    [/^(.+) finished its turn$/, '{0} finished its turn'],
+];
+
+export function agentMessage(message) {
+    for (const [pattern, key] of AGENT_PATTERNS) {
+        const match = pattern.exec(message);
+        if (match)
+            return _(key, match[1]);
+    }
+    return _(message);
+}

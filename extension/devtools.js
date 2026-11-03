@@ -203,7 +203,7 @@ async function testAgents(notch, shotDir) {
     notch.setState(State.IDLE);
     await wait(500);
 
-    await callAgentEvent('claude', 'sesi-uji', 'working', 'zoorinlooklikemac', 'Menjalankan Bash');
+    await callAgentEvent('claude', 'sesi-uji', 'working', 'zoorinlooklikemac', 'Running Bash');
     await wait(SETTLE_MS);
     check('working agent shows the activity row (04)', notch.state === State.ACTIVITY, notch.state);
     if (shotDir)
@@ -220,7 +220,7 @@ async function testAgents(notch, shotDir) {
     await wait(500);
     check('dismissed popup returns to the activity row', notch.state === State.ACTIVITY, notch.state);
 
-    await callAgentEvent('claude', 'sesi-uji', 'done', 'zoorinlooklikemac', 'Giliran Claude selesai');
+    await callAgentEvent('claude', 'sesi-uji', 'done', 'zoorinlooklikemac', 'Claude finished its turn');
     await wait(SETTLE_MS);
     check('done agent pops out', notch.state === State.AGENT, notch.state);
     notch.setState(State.IDLE);
@@ -264,6 +264,18 @@ async function testSettings(extension, notch) {
     await wait(300);
     check('auto hide off turns intellihide off', !taskbar.get_boolean('intellihide'));
 
+    settings.set_int('dock-size', 48);
+    await wait(300);
+    check('dock size goes to zorin-taskbar', taskbar.get_int('panel-size') === 48 &&
+        Object.values(JSON.parse(taskbar.get_string('panel-sizes'))).every(v => v === 48),
+        `${taskbar.get_int('panel-size')} ${taskbar.get_string('panel-sizes')}`);
+    const dockHeight = global.zorinTaskbar?.panels?.[0]?.height;
+    check('dock really resizes', dockHeight === 48, `${dockHeight}`);
+    settings.set_int('dock-size', 40);
+    await wait(300);
+
+    check('notch keeps unredirect off while shown', notch._unredirectHeld === true);
+
     settings.set_int('dock-margin', 6);
     await wait(300);
     check('dock margin goes to zorin-taskbar', taskbar.get_int('panel-margin') === 6, `${taskbar.get_int('panel-margin')}`);
@@ -280,9 +292,43 @@ async function testSettings(extension, notch) {
         await wait(100);
         check('glass opacity follows the preferences', (entry.plate.get_style() ?? '').includes('0.60'), entry.plate.get_style());
         settings.reset('dock-glass-opacity');
+
+        const width = entry.plate.width;
+        settings.set_int('dock-plate-padding', 12);
+        await wait(200);
+        check('glass padding follows the preferences', entry.plate.width === width + 12,
+            `${width} -> ${entry.plate.width}`);
+        settings.reset('dock-plate-padding');
+
+        const icon = zoom._icons(entry.taskbar)[0];
+        settings.set_int('dock-icon-spacing', 9);
+        await wait(200);
+        check('icon spacing follows the preferences', (icon?._iconContainer?.get_style() ?? '').includes(' 8px'),
+            icon?._iconContainer?.get_style());
+        settings.reset('dock-icon-spacing');
     } else {
         check('glass plate exists', false, 'no plate (run with DOCK=1)');
     }
+}
+
+// Language: English by default; Indonesian rebuilds the notch with translated texts
+async function testLanguage(extension) {
+    const settings = extension.getSettings();
+    const english = extension.notch._panelView._bell.accessible_name;
+    check('English is the default', settings.get_string('language') === 'en' && english === 'Notifications', english);
+    settings.set_string('language', 'id');
+    await wait(500);
+    const notch = extension.notch;
+    check('Indonesian rebuilds the notch', notch?._panelView?._bell?.accessible_name === 'Notifikasi',
+        notch?._panelView?._bell?.accessible_name);
+    notch._agents.handle({agent: 'claude', session: 'bahasa', event: 'working', project: 'x', message: 'Running Edit'});
+    notch._agents.handle({agent: 'claude', session: 'bahasa', event: 'waiting', project: 'x', message: 'Needs permission for Edit'});
+    await wait(SETTLE_MS);
+    const shown = notch._agentView.actor.get_children().map(c => c.text).filter(Boolean).join(' | ');
+    check('agent messages are translated', shown.includes('Butuh izin untuk Edit'), shown);
+    notch._agents.handle({agent: 'claude', session: 'bahasa', event: 'end'});
+    settings.set_string('language', 'en');
+    await wait(500);
 }
 
 function sendNotification(title, body, {urgency = MessageTray.Urgency.NORMAL, action = null} = {}) {
@@ -466,6 +512,7 @@ export async function runSelfTest(extension) {
         await testDockZoom(extension, shotDir);
         await testAgents(notch, shotDir);
         await testSettings(extension, notch);
+        await testLanguage(extension);
 
         notch.freezePointer(false);
         notch.setState(State.IDLE);

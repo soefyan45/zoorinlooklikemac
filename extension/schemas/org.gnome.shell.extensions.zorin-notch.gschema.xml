@@ -8,6 +8,15 @@
   </enum>
 
   <schema id="org.gnome.shell.extensions.zorin-notch" path="/org/gnome/shell/extensions/zorin-notch/">
+    <key name="language" type="s">
+      <choices>
+        <choice value="en"/>
+        <choice value="id"/>
+      </choices>
+      <default>'en'</default>
+      <summary>Language of the notch and the preferences window</summary>
+    </key>
+
     <!-- Dock (applied to zorin-taskbar's own settings) -->
     <key name="dock-autohide" enum="org.gnome.shell.extensions.zorin-notch.DockAutohide">
       <default>'off'</default>
@@ -22,6 +31,16 @@
       <range min="0" max="24"/>
       <default>2</default>
       <summary>Space between the dock and the bottom of the screen</summary>
+    </key>
+    <key name="dock-icon-spacing" type="i">
+      <range min="0" max="12"/>
+      <default>4</default>
+      <summary>Space on each side of a dock icon</summary>
+    </key>
+    <key name="dock-plate-padding" type="i">
+      <range min="2" max="20"/>
+      <default>6</default>
+      <summary>Space between the dock icons and the edge of the glass</summary>
     </key>
     <key name="dock-zoom" type="b">
       <default>true</default>

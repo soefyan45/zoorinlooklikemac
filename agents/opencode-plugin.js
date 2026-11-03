@@ -42,26 +42,26 @@ export const ZorinNotchPlugin = async ({ $, directory }) => {
         switch (event?.type) {
           case "session.execution.started":
             lastWorking.delete(session)
-            working(session, "Memproses prompt")
+            working(session, "Processing prompt")
             break
           case "message.part.updated":
             working(session, "")
             break
           case "permission.asked":
           case "permission.updated":
-            send(session, "waiting", "Butuh izin")
+            send(session, "waiting", "Needs permission")
             break
           case "question.asked":
-            send(session, "waiting", "Menunggu jawaban")
+            send(session, "waiting", "Waiting for an answer")
             break
           case "session.execution.succeeded":
           case "session.idle":
             lastWorking.delete(session)
-            send(session, "done", "Giliran opencode selesai")
+            send(session, "done", "opencode finished its turn")
             break
           case "session.execution.failed":
             lastWorking.delete(session)
-            send(session, "done", "Berhenti karena error")
+            send(session, "done", "Stopped with an error")
             break
           case "session.deleted":
             lastWorking.delete(session)
@@ -74,7 +74,7 @@ export const ZorinNotchPlugin = async ({ $, directory }) => {
     },
     "tool.execute.before": async (input) => {
       try {
-        working(input?.sessionID ?? "", input?.tool ? `Menjalankan ${input.tool}` : "")
+        working(input?.sessionID ?? "", input?.tool ? `Running ${input.tool}` : "")
       } catch {}
     },
   }

@@ -53,9 +53,10 @@ Screenshots from the extension running in a nested GNOME Shell.
 - **Dock** — zorin-taskbar turned into a floating, centered dock with a slim glass plate,
   icon magnification under the pointer and optional auto hide.
 - **Preferences** — a GNOME preferences window (palette button in the full panel, or the
-  Extensions app): dock auto hide, height, distance from the bottom, zoom, glass opacity;
-  notch standby line size, notification width, timings, coding agents, panel opacity,
-  animations. Changes apply live.
+  Extensions app): dock auto hide, size, icon spacing, glass padding, distance from the
+  bottom, zoom, glass opacity; notch standby line size, notification width, timings, coding
+  agents, panel opacity, animations. Changes apply live.
+- **Languages** — English (default) and Bahasa Indonesia, chosen in the preferences.
 
 ## Requirements
 

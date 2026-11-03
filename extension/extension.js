@@ -3,6 +3,7 @@ import GLib from 'gi://GLib';
 import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';
 
 import {DockZoom} from './dockzoom.js';
+import {setLanguage} from './i18n.js';
 import {Notch} from './notch.js';
 
 const LOG_PREFIX = '[zorin-notch]';
@@ -20,18 +21,18 @@ export default class ZorinNotchExtension extends Extension {
 
     enable() {
         console.log(LOG_PREFIX, `enable (dry-run: ${DRY_RUN})`);
+        this._settings = this.getSettings();
+        setLanguage(this._settings.get_string('language'));
+        // The notch builds its texts once; a new language rebuilds it
+        this._settings.connectObject('changed::language', () => {
+            setLanguage(this._settings.get_string('language'));
+            this._destroyNotch();
+            this._createNotch();
+        }, this);
+
+        this._createNotch();
         try {
-            this._notch = new Notch({
-                settings: this.getSettings(),
-                openPreferences: () => this.openPreferences(),
-            });
-        } catch (e) {
-            console.error(LOG_PREFIX, 'failed to create the notch', e);
-            this._notch?.destroy();
-            this._notch = null;
-        }
-        try {
-            this._dockZoom = new DockZoom(this.getSettings());
+            this._dockZoom = new DockZoom(this._settings);
         } catch (e) {
             console.error(LOG_PREFIX, 'failed to set up dock zoom', e);
             this._dockZoom = null;
@@ -45,11 +46,29 @@ export default class ZorinNotchExtension extends Extension {
         }
     }
 
-    disable() {
-        console.log(LOG_PREFIX, 'disable');
-        this._dockZoom?.destroy();
-        this._dockZoom = null;
+    _createNotch() {
+        try {
+            this._notch = new Notch({
+                settings: this._settings,
+                openPreferences: () => this.openPreferences(),
+            });
+        } catch (e) {
+            console.error(LOG_PREFIX, 'failed to create the notch', e);
+            this._destroyNotch();
+        }
+    }
+
+    _destroyNotch() {
         this._notch?.destroy();
         this._notch = null;
+    }
+
+    disable() {
+        console.log(LOG_PREFIX, 'disable');
+        this._settings?.disconnectObject(this);
+        this._dockZoom?.destroy();
+        this._dockZoom = null;
+        this._destroyNotch();
+        this._settings = null;
     }
 }

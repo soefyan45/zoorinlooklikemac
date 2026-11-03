@@ -784,10 +784,29 @@ export class Notch {
     }
 
     _syncFullscreen() {
-        this.actor.visible = !Main.layoutManager.primaryMonitor?.inFullscreen;
+        const visible = !Main.layoutManager.primaryMonitor?.inFullscreen;
+        this.actor.visible = visible;
+        this._holdUnredirect(visible);
+    }
+
+    // With no top bar a maximized window covers the whole monitor, so Mutter may hand it to
+    // the display directly ("unredirect") and skip compositing the shell over it: the notch
+    // would vanish. zorin-taskbar re-enables unredirect whenever its auto-hidden dock goes
+    // away, which is when the notch disappeared. Keep it off while the notch is shown; the
+    // calls are reference counted, so this does not fight the taskbar. For real fullscreen
+    // (games, video) the notch hides and the hold is released.
+    _holdUnredirect(hold) {
+        if (hold === !!this._unredirectHeld)
+            return;
+        if (hold)
+            Meta.disable_unredirect_for_display(global.display);
+        else
+            Meta.enable_unredirect_for_display(global.display);
+        this._unredirectHeld = hold;
     }
 
     destroy() {
+        this._holdUnredirect(false);
         this._setModal(false);
         this._clearAutoClose();
         this._setWifiRefresh(false);
