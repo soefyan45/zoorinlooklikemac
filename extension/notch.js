@@ -75,7 +75,8 @@ const VIEW_PADDING = {
     [State.WIFI]: {x: 22, top: 0, bottom: 20},
     [State.LIST]: {x: 30, top: 0, bottom: 24},
     [State.POWER]: {x: 20, top: 16, bottom: 18},
-    [State.SEARCH]: {x: 30, top: 0, bottom: 20},
+    // Spotlight-like search: the entry sits right at the top
+    [State.SEARCH]: {x: 14, top: 12, bottom: 10},
     [State.AGENT]: {x: 22, top: 14, bottom: 18},
 };
 // How long an agent popup stays when nobody looks at it
@@ -115,8 +116,9 @@ export class Notch {
     /**
      * @param {object} options - {settings: Gio.Settings of the extension, openPreferences()}
      */
-    constructor({settings, openPreferences}) {
+    constructor({settings, openPreferences, theme = null}) {
         this._settings = settings;
+        this._theme = theme;
         this._openPreferences = openPreferences;
         this._state = State.IDLE;
         const [w, h] = this._sizeOf(State.IDLE);
@@ -131,6 +133,10 @@ export class Notch {
         this._buildActors();
         this._buildSources();
         this._settings?.connectObject('changed', (_s, key) => this._onSettingsChanged(key), this);
+        // Super, then typing: the text goes to the notch's search instead of the overview's
+        this._pendingSearch = null;
+        Main.overview.searchEntry?.clutter_text.connectObject(
+            'text-changed', () => this._onOverviewTyping(), this);
 
         this._ticker = new Clutter.Timeline({actor: this.actor, duration: 1000, repeat_count: -1});
         this._ticker.connect('new-frame', () => this._tick(Math.min(this._ticker.get_delta(), 50) / 1000));
@@ -148,6 +154,7 @@ export class Notch {
 
         this._relayout();
         this._syncFullscreen();
+        this.onThemeChanged();
     }
 
     _buildActors() {
@@ -220,7 +227,15 @@ export class Notch {
                 Main.overview.searchEntry?.set_text(query);
             }),
         });
-        this._searchView.entry.clutter_text.connect('text-changed', () => this._fitHeight());
+        // New result rows get their CSS on the next frame; measure again then
+        this._searchView.entry.clutter_text.connect('text-changed', () => {
+            this._fitHeight();
+            global.compositor.get_laters().add(Meta.LaterType.BEFORE_REDRAW, () => {
+                if (this.actor && this._state === State.SEARCH)
+                    this._fitHeight();
+                return GLib.SOURCE_REMOVE;
+            });
+        });
         this._activityRow = new ActivityRow();
         this._agentView = new AgentView({
             open: entry => this._closeThen(() => this._agents.focus(entry)),
@@ -394,13 +409,61 @@ export class Notch {
         return [Math.max(IdleHitArea[0], w + 80), Math.max(IdleHitArea[1], h + 8)];
     }
 
-    // $notch-panel with the opacity from the preferences
-    _panelColor() {
-        const opacity = this._settings?.get_double('panel-opacity');
-        if (opacity === undefined)
-            return Color.notchPanel;
-        const alpha = Math.round(opacity * 255).toString(16).padStart(2, '0');
-        return `${Color.notchPanel.slice(0, 7)}${alpha}`;
+    // Expanded surface of the current theme ($notch-panel on dark), alpha from the preferences
+    _surface() {
+        return this._theme?.surface ?? {fill: Color.notchPanel, edge: Color.notchGlassEdge, solidTop: true};
+    }
+
+    // Light or dark look of the notch's content (the generated theme stylesheet keys on this)
+    onThemeChanged() {
+        if (this._theme?.isLight)
+            this.actor.add_style_class_name('zorin-notch-light');
+        else
+            this.actor.remove_style_class_name('zorin-notch-light');
+        this._area.queue_repaint();
+        this._fitHeight();
+    }
+
+    // Open the search with some text already typed (from the overview)
+    openSearch(text = '') {
+        this.setState(State.SEARCH);
+        if (text) {
+            this._searchView.entry.text = text;
+            this._searchView.entry.clutter_text.set_cursor_position(-1);
+        }
+    }
+
+    _onOverviewTyping() {
+        if (!(this._settings?.get_boolean('spotlight-on-type') ?? true))
+            return;
+        const entry = Main.overview.searchEntry;
+        const text = entry?.get_text() ?? '';
+        if (!text || !Main.overview.visible)
+            return;
+
+        // Collect what is typed while the overview closes, then hand it all over
+        const first = this._pendingSearch === null;
+        this._pendingSearch = (this._pendingSearch ?? '') + text;
+        entry.set_text('');
+        if (!first)
+            return;
+        const hiddenId = Main.overview.connect('hidden', () => {
+            Main.overview.disconnect(hiddenId);
+            const query = this._pendingSearch;
+            this._pendingSearch = null;
+            if (this.actor)
+                this.openSearch(query);
+        });
+        Main.overview.hide();
+    }
+
+    // Floating notch: a pill below the top edge instead of a notch cut into it
+    _floating() {
+        return this._settings?.get_boolean('notch-floating') ?? false;
+    }
+
+    _floatOffset() {
+        return this._floating() ? this._settings.get_int('notch-float-offset') : 0;
     }
 
     _seconds(key, fallbackMs) {
@@ -427,6 +490,11 @@ export class Notch {
             this._onAgentsChanged();
             break;
         case 'panel-opacity':
+            this._area.queue_repaint();
+            break;
+        case 'notch-floating':
+        case 'notch-float-offset':
+            this._relayout();
             this._area.queue_repaint();
             break;
         }
@@ -725,8 +793,10 @@ export class Notch {
             height = Math.max(height, this._box.height);
         }
 
+        const top = monitor.y + this._floatOffset() * scale;
         const boxChanged = this._box?.width !== width || this._box?.height !== height ||
-            this._box?.monitorX !== monitor.x || this._box?.monitorWidth !== monitor.width;
+            this._box?.monitorX !== monitor.x || this._box?.monitorWidth !== monitor.width ||
+            this._box?.top !== top;
         if (!boxChanged) {
             this._activityRow.actor.visible = this._state === State.ACTIVITY &&
                 this._height.value >= CONTENT_MIN_HEIGHT;
@@ -735,10 +805,10 @@ export class Notch {
             this._area.queue_repaint();
             return;
         }
-        this._box = {width, height, monitorX: monitor.x, monitorWidth: monitor.width};
+        this._box = {width, height, monitorX: monitor.x, monitorWidth: monitor.width, top};
 
         this.actor.set_size(width, height);
-        this.actor.set_position(monitor.x + Math.round((monitor.width - width) / 2), monitor.y);
+        this.actor.set_position(monitor.x + Math.round((monitor.width - width) / 2), Math.round(top));
         this._area.set_size(width, height);
 
         const rowWidth = Math.round((StateSize.status[0] - 2 * STATUS_ROW_INSET) * scale);
@@ -767,11 +837,16 @@ export class Notch {
         try {
             const [areaWidth] = area.get_surface_size();
             const scale = scaleFactor();
+            const surface = this._surface();
             drawNotch(cr, areaWidth, this._width.value * scale, Math.max(0, this._height.value) * scale, {
                 scale,
                 ringColor: this._state === State.IDLE ? Color.notchIdleEdge : Color.notchGlassEdge,
-                panelColor: this._state === State.NOTIFICATION ? Color.notchGlass : this._panelColor(),
-                edgeColor: this._state === State.AGENT ? Color.aiEdge : Color.notchGlassEdge,
+                panelColor: this._state === State.NOTIFICATION && surface.solidTop
+                    ? Color.notchGlass : surface.fill,
+                edgeColor: this._state === State.AGENT ? Color.aiEdge : surface.edge,
+                solidTop: surface.solidTop,
+                floating: this._floating(),
+                accentColor: this._theme?.accent.color ?? Color.accent,
                 expanded: EXPANDED.has(this._state),
                 showCamera: false,
                 unreadDot: (this._messages?.unreadCount ?? 0) > 0,
@@ -818,6 +893,7 @@ export class Notch {
         this._ticker = null;
 
         this._settings?.disconnectObject(this);
+        Main.overview.searchEntry?.clutter_text.disconnectObject(this);
         Main.layoutManager.disconnectObject(this);
         global.display.disconnectObject(this);
         St.ThemeContext.get_for_stage(global.stage).disconnectObject(this);

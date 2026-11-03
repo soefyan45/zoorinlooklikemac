@@ -11,6 +11,20 @@ import {ExtensionPreferences} from 'resource:///org/gnome/Shell/Extensions/js/ex
 
 import {LANGUAGES, _, setLanguage} from './i18n.js';
 
+const THEMES = [
+    ['dark', 'Dark'],
+    ['light', 'Light'],
+    ['system', 'Follow system'],
+];
+
+const ACCENT_NAMES = [
+    ['orange', 'Orange'],
+    ['blue', 'Blue'],
+    ['green', 'Green'],
+    ['purple', 'Purple'],
+    ['pink', 'Pink'],
+];
+
 const AUTOHIDE = [
     ['off', 'Off'],
     ['all-windows', 'When windows cover the dock'],
@@ -79,10 +93,14 @@ export default class ZorinNotchPreferences extends ExtensionPreferences {
         // Dock
         const dock = new Adw.PreferencesPage({title: 'Dock', icon_name: 'view-app-grid-symbolic'});
 
-        const language = new Adw.PreferencesGroup();
-        language.add(choiceRow(settings, 'language', 'Language',
+        const general = new Adw.PreferencesGroup({title: _('General')});
+        general.add(choiceRow(settings, 'language', 'Language',
             'Language of the notch and this window; the window updates when reopened', LANGUAGES, false));
-        dock.add(language);
+        general.add(choiceRow(settings, 'theme', 'Theme',
+            'Look of the notch and the dock', THEMES));
+        general.add(choiceRow(settings, 'accent', 'Accent color',
+            'Active toggles, switches and highlights', ACCENT_NAMES));
+        dock.add(general);
 
         const dockBehavior = new Adw.PreferencesGroup({
             title: _('Behavior'),
@@ -115,11 +133,19 @@ export default class ZorinNotchPreferences extends ExtensionPreferences {
             'Seconds before a notification turns back into the line', {lower: 2, upper: 30}));
         notchBehavior.add(spinRow(settings, 'status-seconds', 'Status time',
             'Seconds before a clicked status closes by itself', {lower: 2, upper: 30}));
+        notchBehavior.add(switchRow(settings, 'spotlight-on-type', 'Search while typing in the overview',
+            'Press Super and start typing: the notch search opens instead of the overview search'));
         notchBehavior.add(switchRow(settings, 'show-agents', 'AI agents in the notch',
             'Claude Code and opencode: working, needs permission, finished'));
         notch.add(notchBehavior);
 
         const notchLook = new Adw.PreferencesGroup({title: _('Appearance')});
+        notchLook.add(switchRow(settings, 'notch-floating', 'Floating notch',
+            'A rounded pill below the top edge instead of a notch cut into it'));
+        const offset = spinRow(settings, 'notch-float-offset', 'Distance from the top',
+            'In pixels, for the floating notch', {lower: 2, upper: 32});
+        settings.bind('notch-floating', offset, 'sensitive', Gio.SettingsBindFlags.GET);
+        notchLook.add(offset);
         notchLook.add(spinRow(settings, 'idle-width', 'Standby line width',
             'In pixels; it grows by 40 px when the pointer comes near', {lower: 40, upper: 300, step: 10}));
         notchLook.add(spinRow(settings, 'idle-height', 'Standby line thickness',

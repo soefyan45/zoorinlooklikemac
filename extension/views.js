@@ -2,6 +2,7 @@
 // notification list (07). Layout and copy follow the Pego frames.
 
 import Clutter from 'gi://Clutter';
+import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 import GObject from 'gi://GObject';
 import Shell from 'gi://Shell';
@@ -698,19 +699,24 @@ export class AgentView {
 }
 
 const MAX_SEARCH_RESULTS = 6;
+const SUGGESTED_APPS = 4;
 
 /**
- * App search in the notch ("Cari"): an entry and the matching apps, ranked like GNOME's own
- * app search (Shell.AppSystem.search, then by usage). Enter opens the first result; the last
- * row hands the query over to the GNOME overview for files and other providers.
+ * App search in the notch ("Search"), Spotlight style: a large entry, then the matching apps
+ * ranked like GNOME's own app search (Shell.AppSystem.search, then by usage), or the most
+ * used apps while the entry is empty. The selected row is highlighted with the accent; ↑/↓
+ * move it, Enter opens it. The last row hands the query over to the GNOME overview.
  * actions: {launch(app), searchInOverview(query)}
  */
 export class SearchView {
     constructor(actions) {
         this._actions = actions;
         this._results = [];
+        this._rows = [];
+        this._selected = 0;
 
         this.actor = new St.BoxLayout({style_class: 'zorin-notch-search', vertical: true});
+        // Kept for the notch's status updates; the Spotlight layout does not show it
         this.statusRow = new StatusRow('zorin-notch-status zorin-notch-panel-status');
 
         this.entry = new St.Entry({
@@ -721,17 +727,18 @@ export class SearchView {
             primary_icon: new St.Icon({icon_name: 'system-search-symbolic', style_class: 'zorin-notch-search-icon'}),
         });
         this.entry.clutter_text.connect('text-changed', () => this.update());
-        this.entry.clutter_text.connect('activate', () => {
-            const [first] = this._results;
-            if (first)
-                actions.launch(first);
-            else if (this.entry.text.trim())
-                actions.searchInOverview(this.entry.text.trim());
+        this.entry.clutter_text.connect('activate', () => this._rows[this._selected]?.activate());
+        this.entry.clutter_text.connect('key-press-event', (_actor, event) => {
+            const key = event.get_key_symbol();
+            if (key === Clutter.KEY_Down || key === Clutter.KEY_Up) {
+                this._select(this._selected + (key === Clutter.KEY_Down ? 1 : -1));
+                return Clutter.EVENT_STOP;
+            }
+            return Clutter.EVENT_PROPAGATE;
         });
 
         this._list = new St.BoxLayout({style_class: 'zorin-notch-search-results', vertical: true});
 
-        this.actor.add_child(this.statusRow.actor);
         this.actor.add_child(this.entry);
         this.actor.add_child(this._list);
     }
@@ -746,10 +753,12 @@ export class SearchView {
     }
 
     _search(query) {
-        if (!query)
-            return [];
         const appSystem = Shell.AppSystem.get_default();
         const usage = Shell.AppUsage.get_default();
+        if (!query) {
+            return usage.get_most_used().filter(app => app?.app_info?.should_show())
+                .slice(0, SUGGESTED_APPS);
+        }
         const ids = [];
         for (const group of Shell.AppSystem.search(query))
             ids.push(...group.sort((a, b) => usage.compare(a, b)));
@@ -758,40 +767,70 @@ export class SearchView {
             .slice(0, MAX_SEARCH_RESULTS);
     }
 
+    _row({gicon, iconActor, text, meta, onActivate}) {
+        const box = new St.BoxLayout({style_class: 'zorin-notch-search-row-content', x_expand: true});
+        box.add_child(new St.Bin({
+            style_class: 'zorin-notch-search-app-icon',
+            child: iconActor ?? new St.Icon({gicon, icon_size: 18, style_class: 'zorin-notch-search-glyph'}),
+        }));
+        box.add_child(label(text, 'zorin-notch-search-name', {x_expand: true}));
+        box.add_child(label(meta, 'zorin-notch-search-meta'));
+        const row = new St.Button({
+            style_class: 'zorin-notch-search-row',
+            child: box,
+            x_expand: true,
+            can_focus: false,
+        });
+        row.activate = onActivate;
+        row.connect('clicked', onActivate);
+        const index = this._rows.length;
+        row.connect('notify::hover', () => {
+            if (row.hover)
+                this._select(index);
+        });
+        this._rows.push(row);
+        this._list.add_child(row);
+        return row;
+    }
+
+    _select(index) {
+        if (!this._rows.length)
+            return;
+        this._selected = Math.max(0, Math.min(index, this._rows.length - 1));
+        this._rows.forEach((row, i) => {
+            if (i === this._selected)
+                row.add_style_pseudo_class('selected');
+            else
+                row.remove_style_pseudo_class('selected');
+        });
+    }
+
     update() {
         const query = this.entry.text.trim();
         this._results = this._search(query);
         this._list.destroy_all_children();
+        this._rows = [];
 
-        this._results.forEach((app, index) => {
-            const box = new St.BoxLayout({style_class: 'zorin-notch-menu-item-content', x_expand: true});
-            box.add_child(new St.Bin({
-                style_class: 'zorin-notch-search-app-icon',
-                child: app.create_icon_texture(28),
-            }));
-            box.add_child(label(app.get_name(), 'zorin-notch-menu-label', {x_expand: true}));
-            if (index === 0)
-                box.add_child(label('Enter', 'zorin-notch-menu-meta'));
-            const button = new St.Button({
-                style_class: 'zorin-notch-menu-item',
-                child: box,
-                x_expand: true,
-                can_focus: true,
+        for (const app of this._results) {
+            this._row({
+                iconActor: app.create_icon_texture(24),
+                text: app.get_name(),
+                meta: _('App'),
+                onActivate: () => this._actions.launch(app),
             });
-            button.connect('clicked', () => this._actions.launch(app));
-            this._list.add_child(button);
-        });
-
+        }
         if (query) {
             if (!this._results.length)
                 this._list.add_child(label(_('No matching apps'), 'zorin-notch-list-empty'));
-            this._list.add_child(menuItem({
-                iconName: 'system-search-symbolic',
+            this._row({
+                gicon: new Gio.ThemedIcon({name: 'system-search-symbolic'}),
                 text: _('Search “{0}” in Overview', query),
-                trailIcon: 'pan-end-symbolic',
-                onClick: () => this._actions.searchInOverview(query),
-            }));
+                meta: 'Overview',
+                onActivate: () => this._actions.searchInOverview(query),
+            });
         }
+        this._list.visible = this._rows.length > 0;
+        this._select(0);
     }
 
     destroy() {

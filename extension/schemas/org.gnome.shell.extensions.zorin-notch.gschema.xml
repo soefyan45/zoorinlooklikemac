@@ -16,6 +16,26 @@
       <default>'en'</default>
       <summary>Language of the notch and the preferences window</summary>
     </key>
+    <key name="theme" type="s">
+      <choices>
+        <choice value="dark"/>
+        <choice value="light"/>
+        <choice value="system"/>
+      </choices>
+      <default>'dark'</default>
+      <summary>Look of the notch and the dock: dark, light, or following GNOME's dark mode</summary>
+    </key>
+    <key name="accent" type="s">
+      <choices>
+        <choice value="orange"/>
+        <choice value="blue"/>
+        <choice value="green"/>
+        <choice value="purple"/>
+        <choice value="pink"/>
+      </choices>
+      <default>'orange'</default>
+      <summary>Accent color of active toggles, switches and highlights</summary>
+    </key>
 
     <!-- Dock (applied to zorin-taskbar's own settings) -->
     <key name="dock-autohide" enum="org.gnome.shell.extensions.zorin-notch.DockAutohide">
@@ -63,12 +83,25 @@
       <default>5</default>
       <summary>How long the clicked status stays open</summary>
     </key>
+    <key name="spotlight-on-type" type="b">
+      <default>true</default>
+      <summary>Typing in the overview (after Super) opens the notch's search instead</summary>
+    </key>
     <key name="show-agents" type="b">
       <default>true</default>
       <summary>Show coding agents (Claude Code, opencode) in the notch</summary>
     </key>
 
     <!-- Notch look -->
+    <key name="notch-floating" type="b">
+      <default>false</default>
+      <summary>Float the notch below the top edge as a rounded pill</summary>
+    </key>
+    <key name="notch-float-offset" type="i">
+      <range min="2" max="32"/>
+      <default>8</default>
+      <summary>Space between a floating notch and the top of the screen</summary>
+    </key>
     <key name="idle-width" type="i">
       <range min="40" max="300"/>
       <default>120</default>

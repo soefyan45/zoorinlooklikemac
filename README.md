@@ -57,6 +57,11 @@ Screenshots from the extension running in a nested GNOME Shell.
   bottom, zoom, glass opacity; notch standby line size, notification width, timings, coding
   agents, panel opacity, animations. Changes apply live.
 - **Languages** — English (default) and Bahasa Indonesia, chosen in the preferences.
+- **Themes** — dark, light (frosted glass) or following GNOME's dark mode, with an accent
+  color (orange, blue, green, purple, pink) for the notch and the dock.
+- **Floating notch** — optionally a rounded pill a few pixels below the top edge.
+- **Spotlight search** — the notch search (Search button, or press Super and start typing)
+  with the selected result highlighted; ↑/↓ to move, Enter to open.
 
 ## Requirements
 

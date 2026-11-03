@@ -58,11 +58,33 @@ const STRINGS = {
         'Stopped with an error': 'Berhenti karena error',
         // Search
         'Search apps…': 'Cari aplikasi…',
+        'App': 'Aplikasi',
         'No matching apps': 'Tidak ada aplikasi yang cocok',
         'Search “{0}” in Overview': 'Cari “{0}” di Overview',
 
         // Preferences window
+        'General': 'Umum',
+        'Theme': 'Tema',
+        'Look of the notch and the dock': 'Tampilan notch dan dock',
+        'Dark': 'Gelap',
+        'Light': 'Terang',
+        'Follow system': 'Ikuti sistem',
+        'Accent color': 'Warna aksen',
+        'Active toggles, switches and highlights': 'Toggle aktif, sakelar dan sorotan',
+        'Orange': 'Oranye',
+        'Blue': 'Biru',
+        'Green': 'Hijau',
+        'Purple': 'Ungu',
+        'Pink': 'Merah muda',
         'Behavior': 'Perilaku',
+        'Search while typing in the overview': 'Cari saat mengetik di overview',
+        'Press Super and start typing: the notch search opens instead of the overview search':
+            'Tekan Super lalu ketik: pencarian notch terbuka, bukan pencarian overview',
+        'Floating notch': 'Notch melayang',
+        'A rounded pill below the top edge instead of a notch cut into it':
+            'Pil bulat di bawah tepi atas, bukan notch yang menempel di tepi',
+        'Distance from the top': 'Jarak dari atas layar',
+        'In pixels, for the floating notch': 'Dalam piksel, untuk notch melayang',
         'Appearance': 'Tampilan',
         'Language': 'Bahasa',
         'Language of the notch and this window; the window updates when reopened':

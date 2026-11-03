@@ -80,8 +80,9 @@ export class DockZoom {
     /**
      * @param {Gio.Settings} settings - the extension's settings (dock-* keys)
      */
-    constructor(settings = null) {
+    constructor(settings = null, theme = null) {
         this._settings = settings;
+        this._theme = theme;
         this._taskbarSettings = taskbarSettings();
         this._settings?.connectObject('changed', (_s, key) => this._onSettingsChanged(key), this);
         this._watched = new Set();
@@ -156,12 +157,18 @@ export class DockZoom {
 
     // Glass tint with the opacity from the preferences (the CSS class holds edge and radius)
     _stylePlate(plate) {
-        const alpha = (this._settings?.get_double('dock-glass-opacity') ?? 0.36).toFixed(2);
+        const opacity = this._settings?.get_double('dock-glass-opacity') ?? 0.36;
         // Fully rounded ends whatever the plate height
         const radius = `border-radius: ${Math.round((plate.height || 34) / 2)}px;`;
-        plate.set_style(radius + (alpha > 0
-            ? `background-gradient-start: rgba(36, 48, 68, ${alpha}); background-gradient-end: rgba(20, 30, 48, ${alpha});`
-            : 'background-gradient-direction: none; border-color: transparent;'));
+        const glass = this._theme?.plateStyle(opacity) ??
+            `background-gradient-start: rgba(36, 48, 68, ${opacity.toFixed(2)}); ` +
+            `background-gradient-end: rgba(20, 30, 48, ${opacity.toFixed(2)});`;
+        plate.set_style(radius + glass);
+    }
+
+    // Light or dark glass after a theme change
+    onThemeChanged() {
+        this._plates.forEach(({plate}) => this._stylePlate(plate));
     }
 
     _stopWaiting() {

@@ -13,6 +13,7 @@ const COMPACT_HEIGHT = 32;
 const SOLID_TOP = 32;
 const FADE = 40;
 const UNREAD_DOT_RADIUS = 3;
+const FLOATING_RADIUS = 22;
 
 export function parseColor(hex) {
     const n = hex.replace('#', '');
@@ -83,6 +84,9 @@ export function drawNotch(cr, areaWidth, w, h, opts) {
         expanded = false,
         showCamera = false,
         unreadDot = false,
+        accentColor = Color.accent,
+        solidTop = true,
+        floating = false,
     } = opts;
     if (w <= 0 || h <= 0)
         return;
@@ -103,7 +107,7 @@ export function drawNotch(cr, areaWidth, w, h, opts) {
             const r = UNREAD_DOT_RADIUS * scale;
             cr.newPath();
             cr.arc(x + w + 2 * r + scale, r + scale, r, 0, 2 * Math.PI);
-            setColor(cr, Color.accent);
+            setColor(cr, accentColor);
             cr.fill();
         }
         return;
@@ -114,17 +118,27 @@ export function drawNotch(cr, areaWidth, w, h, opts) {
     const ear = (expanded ? Shape.expandedEar : Shape.compactEar) * scale * t;
     const radius = (expanded ? Shape.expandedBottomRadius : Shape.compactBottomRadius) * scale;
 
-    notchPath(cr, x, w, h, ear, radius, expanded);
+    if (floating) {
+        // Floating notch: a pill (compact) or a card with round corners (expanded), no ears
+        roundedRect(cr, x, 0, w, h, expanded ? FLOATING_RADIUS * scale : h / 2);
+    } else {
+        notchPath(cr, x, w, h, ear, radius, expanded);
+    }
     if (expanded) {
-        // Solid black under the status row, fading into the translucent panel below it
-        const solidEnd = Math.min(1, SOLID_TOP * scale / h);
-        const fadeEnd = Math.min(1, (SOLID_TOP + FADE) * scale / h);
-        const gradient = new Cairo.LinearGradient(0, 0, 0, h);
-        gradient.addColorStopRGBA(0, ...parseColor(Color.notch));
-        gradient.addColorStopRGBA(solidEnd, ...parseColor(Color.notch));
-        gradient.addColorStopRGBA(fadeEnd, ...parseColor(panelColor));
-        gradient.addColorStopRGBA(1, ...parseColor(panelColor));
-        cr.setSource(gradient);
+        if (solidTop) {
+            // Dark: solid black under the status row, fading into the translucent panel
+            const solidEnd = Math.min(1, SOLID_TOP * scale / h);
+            const fadeEnd = Math.min(1, (SOLID_TOP + FADE) * scale / h);
+            const gradient = new Cairo.LinearGradient(0, 0, 0, h);
+            gradient.addColorStopRGBA(0, ...parseColor(Color.notch));
+            gradient.addColorStopRGBA(solidEnd, ...parseColor(Color.notch));
+            gradient.addColorStopRGBA(fadeEnd, ...parseColor(panelColor));
+            gradient.addColorStopRGBA(1, ...parseColor(panelColor));
+            cr.setSource(gradient);
+        } else {
+            // Light: one frosted surface
+            setColor(cr, panelColor);
+        }
         cr.fillPreserve();
         cr.setLineWidth(scale);
         setColor(cr, edgeColor);

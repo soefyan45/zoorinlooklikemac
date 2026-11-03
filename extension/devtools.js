@@ -331,6 +331,80 @@ async function testLanguage(extension) {
     await wait(500);
 }
 
+// Light theme with a blue accent: notch content, Cairo surface and dock glass follow
+async function testTheme(extension, shotDir) {
+    const settings = extension.getSettings();
+    settings.set_string('theme', 'light');
+    settings.set_string('accent', 'blue');
+    await wait(500);
+    const notch = extension.notch;
+    notch.freezePointer(true);
+    check('light theme marks the notch', notch.actor.has_style_class_name('zorin-notch-light'));
+    check('light surface for the expanded notch', notch._surface().solidTop === false, notch._surface().fill);
+    const css = new TextDecoder().decode(extension._theme._file.load_contents(null)[1]);
+    check('accent goes into the theme stylesheet', css.includes('#0A84FF'));
+    const [plate] = [...(extension._dockZoom?._plates?.values() ?? [])];
+    if (plate)
+        check('dock glass turns light', (plate.plate.get_style() ?? '').includes('255, 255, 255'), plate.plate.get_style());
+
+    if (shotDir) {
+        notch.setState(State.PANEL);
+        await wait(SETTLE_MS);
+        await screenshot(`${shotDir}/panel-light.png`);
+        notch.setState(State.SEARCH);
+        await wait(SETTLE_MS);
+        notch._searchView.entry.text = 'te';
+        await wait(SETTLE_MS);
+        await screenshot(`${shotDir}/search-light.png`);
+        console.log(LOG_PREFIX, `shot search light (size=${notch.debugSize})`);
+    }
+    notch.setState(State.IDLE);
+    settings.reset('theme');
+    settings.reset('accent');
+    await wait(500);
+    check('dark theme again', !extension.notch.actor.has_style_class_name('zorin-notch-light'));
+    if (shotDir) {
+        const dark = extension.notch;
+        dark.setState(State.SEARCH);
+        await wait(SETTLE_MS);
+        dark._searchView.entry.text = 'te';
+        await wait(SETTLE_MS);
+        await screenshot(`${shotDir}/search-dark.png`);
+        dark.setState(State.IDLE);
+    }
+    notch.freezePointer(false);
+}
+
+// Floating notch, and typing in the overview opening the notch search
+async function testFloatingAndOverview(extension, shotDir) {
+    const settings = extension.getSettings();
+    const notch = extension.notch;
+    notch.freezePointer(true);
+    notch.setState(State.STATUS);
+    settings.set_boolean('notch-floating', true);
+    await wait(SETTLE_MS);
+    const monitor = Main.layoutManager.primaryMonitor;
+    check('floating notch sits below the top edge', notch.actor.y === monitor.y + settings.get_int('notch-float-offset'),
+        `y=${notch.actor.y}`);
+    if (shotDir)
+        await screenshot(`${shotDir}/floating.png`);
+    settings.reset('notch-floating');
+    await wait(SETTLE_MS);
+    check('attached notch is back at the top', notch.actor.y === monitor.y, `y=${notch.actor.y}`);
+    notch.setState(State.IDLE);
+    notch.freezePointer(false);
+
+    Main.overview.show();
+    await wait(SETTLE_MS);
+    Main.overview.searchEntry.set_text('ter');
+    await wait(SETTLE_MS * 2);
+    const current = extension.notch;
+    check('typing in the overview opens the notch search', current.state === State.SEARCH &&
+        current._searchView.entry.text === 'ter', `${current.state} "${current._searchView.entry.text}" overview=${Main.overview.visible}`);
+    current.setState(State.IDLE);
+    await wait(500);
+}
+
 function sendNotification(title, body, {urgency = MessageTray.Urgency.NORMAL, action = null} = {}) {
     const source = new MessageTray.Source({title: 'Uji Notch', iconName: 'mail-unread-symbolic'});
     Main.messageTray.add(source);
@@ -513,6 +587,8 @@ export async function runSelfTest(extension) {
         await testAgents(notch, shotDir);
         await testSettings(extension, notch);
         await testLanguage(extension);
+        await testTheme(extension, shotDir);
+        await testFloatingAndOverview(extension, shotDir);
 
         notch.freezePointer(false);
         notch.setState(State.IDLE);

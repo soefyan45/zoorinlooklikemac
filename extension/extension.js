@@ -5,6 +5,7 @@ import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';
 import {DockZoom} from './dockzoom.js';
 import {setLanguage} from './i18n.js';
 import {Notch} from './notch.js';
+import {ThemeManager} from './theme.js';
 
 const LOG_PREFIX = '[zorin-notch]';
 
@@ -30,9 +31,20 @@ export default class ZorinNotchExtension extends Extension {
             this._createNotch();
         }, this);
 
+        // Dark, light or following GNOME's dark mode, plus the accent color
+        try {
+            this._theme = new ThemeManager(this._settings, () => {
+                this._notch?.onThemeChanged();
+                this._dockZoom?.onThemeChanged();
+            });
+        } catch (e) {
+            console.error(LOG_PREFIX, 'failed to set up the theme', e);
+            this._theme = null;
+        }
+
         this._createNotch();
         try {
-            this._dockZoom = new DockZoom(this._settings);
+            this._dockZoom = new DockZoom(this._settings, this._theme);
         } catch (e) {
             console.error(LOG_PREFIX, 'failed to set up dock zoom', e);
             this._dockZoom = null;
@@ -50,6 +62,7 @@ export default class ZorinNotchExtension extends Extension {
         try {
             this._notch = new Notch({
                 settings: this._settings,
+                theme: this._theme,
                 openPreferences: () => this.openPreferences(),
             });
         } catch (e) {
@@ -69,6 +82,8 @@ export default class ZorinNotchExtension extends Extension {
         this._dockZoom?.destroy();
         this._dockZoom = null;
         this._destroyNotch();
+        this._theme?.destroy();
+        this._theme = null;
         this._settings = null;
     }
 }
