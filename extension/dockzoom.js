@@ -32,6 +32,9 @@ const EASE_MS = 90;
 const WATCH_MS = 60;
 const WAIT_MS = 500;
 const WAIT_TRIES = 60;
+const TASKBAR_UUID = 'zorin-taskbar@zorinos.com';
+// ExtensionState.ENABLED of the shell's extension manager
+const EXTENSION_ENABLED = 1;
 const DOCK_STYLE_CLASS = 'zorin-notch-dock';
 // Horizontal room around each icon. zorin-taskbar uses 4 px margin + 8 px padding per side;
 // the vertical padding (which sets the icon size) is kept as is.
@@ -91,18 +94,35 @@ export class DockZoom {
         this._plates = new Map(); // panel -> glass plate behind its icons
         this._emitter = null;
         this._waitId = 0;
-        // zorin-taskbar may be enabled after us at login; wait for it
-        if (!this._connect()) {
-            let tries = 0;
-            this._waitId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, WAIT_MS, () => {
-                if (this._connect())
-                    return this._stopWaiting();
-                if (++tries < WAIT_TRIES)
-                    return GLib.SOURCE_CONTINUE;
-                console.warn(LOG_PREFIX, 'zorin-taskbar not found, dock zoom disabled');
+        // zorin-taskbar may be enabled after us at login, and it makes a new emitter every time
+        // it is enabled again: follow it
+        this._startConnecting();
+        Main.extensionManager?.connectObject('extension-state-changed', (_manager, extension) => {
+            if (extension.uuid !== TASKBAR_UUID)
+                return;
+            if (extension.state === EXTENSION_ENABLED) {
+                this._startConnecting();
+            } else {
+                this._cancelWaiting();
+                this._disconnectEmitter();
+                this._detach(true);
+            }
+        }, this);
+    }
+
+    _startConnecting() {
+        this._cancelWaiting();
+        if (this._connect())
+            return;
+        let tries = 0;
+        this._waitId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, WAIT_MS, () => {
+            if (this._connect())
                 return this._stopWaiting();
-            });
-        }
+            if (++tries < WAIT_TRIES)
+                return GLib.SOURCE_CONTINUE;
+            console.warn(LOG_PREFIX, 'zorin-taskbar not found, dock zoom disabled');
+            return this._stopWaiting();
+        });
     }
 
     _onSettingsChanged(key) {
@@ -171,12 +191,30 @@ export class DockZoom {
         this._plates.forEach(({plate}) => this._stylePlate(plate));
     }
 
+    // Return value of the wait timer's callback: the timer ends itself
     _stopWaiting() {
         this._waitId = 0;
         return GLib.SOURCE_REMOVE;
     }
 
+    _cancelWaiting() {
+        if (this._waitId)
+            GLib.source_remove(this._waitId);
+        this._waitId = 0;
+    }
+
+    _disconnectEmitter() {
+        if (this._panelsId && this._emitter) {
+            try {
+                this._emitter.disconnect(this._panelsId);
+            } catch {}
+        }
+        this._panelsId = 0;
+        this._emitter = null;
+    }
+
     _connect() {
+        this._disconnectEmitter();
         this._emitter = global.zorinTaskbar ?? null;
         if (!this._emitter)
             return false;
@@ -214,6 +252,12 @@ export class DockZoom {
                     this._reset(taskbar);
                     return Clutter.EVENT_PROPAGATE;
                 },
+                'destroy', () => {
+                    for (const watched of this._watched) {
+                        if (watched.target === target)
+                            this._watched.delete(watched);
+                    }
+                },
                 this);
             this._watched.add({taskbar, target});
         }
@@ -247,15 +291,45 @@ export class DockZoom {
             GObject.BindingFlags.SYNC_CREATE);
         this._plates.set(panel, {plate, binding, anchor, taskbar});
 
-        const sync = () => this._syncPlate(plate, taskbar, anchor);
+        // The taskbar's actors are destroyed when it is rebuilt or disabled, and their last
+        // allocation notifications still arrive: leave them alone from then on
+        let gone = false;
+        const markGone = () => {
+            gone = true;
+        };
+        taskbar._box.connectObject('destroy', markGone, this);
+        anchor.connectObject('destroy', markGone, this);
+        const sync = () => {
+            if (!gone)
+                this._syncPlate(plate, taskbar, anchor);
+        };
         // Icons coming and going resize the box; the dock re-centers by moving the panel
         taskbar._box.connectObject('notify::allocation', sync, 'notify::mapped', sync, this);
-        panel.connectObject('notify::allocation', sync, this);
+        panel.connectObject('notify::allocation', sync, 'destroy', () => {
+            // Nothing of the destroyed panel can be unbound or disconnected any more
+            const entry = this._plates.get(panel);
+            if (!entry)
+                return;
+            entry.plate.destroy();
+            this._plates.delete(panel);
+            this._styled.delete(panel);
+        }, this);
         anchor.connectObject('notify::allocation', sync, 'notify::visible', sync, this);
         sync();
     }
 
     _syncPlate(plate, taskbar, anchor) {
+        try {
+            this._placePlate(plate, taskbar, anchor);
+        } catch {
+            // The taskbar or its panel is being destroyed (rebuilt, or disabled)
+            try {
+                plate.hide();
+            } catch {}
+        }
+    }
+
+    _placePlate(plate, taskbar, anchor) {
         const box = taskbar._box;
         if (!box?.mapped || !box.width || !anchor.visible) {
             plate.hide();
@@ -286,8 +360,11 @@ export class DockZoom {
             const container = icon._iconContainer;
             if (!container || (this._compacted.has(icon) && !force))
                 continue;
-            if (!this._compacted.has(icon))
+            if (!this._compacted.has(icon)) {
                 this._compacted.set(icon, {icon: icon.get_style(), container: container.get_style()});
+                // A rebuilt taskbar destroys its icons: nothing left to restore on them
+                icon.connectObject('destroy', () => this._compacted.delete(icon), this);
+            }
             const original = this._compacted.get(icon);
             const vertical = /padding:\s*([\d.]+)px/.exec(original.container ?? '')?.[1] ?? '8';
             icon.set_style(`padding: 0 ${margin}px;`);
@@ -352,10 +429,21 @@ export class DockZoom {
             this._scale(icon, 1);
     }
 
-    _detach() {
+    // taskbarGone: zorin-taskbar was disabled and its actors are destroyed; only what this module
+    // made (the glass plates) is removed, nothing of the taskbar is touched
+    _detach(taskbarGone = false) {
         if (this._watchId) {
             GLib.source_remove(this._watchId);
             this._watchId = 0;
+        }
+        if (taskbarGone) {
+            this._watched.clear();
+            this._compacted.clear();
+            this._styled.clear();
+            for (const {plate} of this._plates.values())
+                plate.destroy();
+            this._plates.clear();
+            return;
         }
         for (const {taskbar, target} of this._watched) {
             // The taskbar may already be gone when its panels were rebuilt
@@ -401,9 +489,8 @@ export class DockZoom {
             GLib.source_remove(this._waitId);
             this._waitId = 0;
         }
-        if (this._panelsId)
-            this._emitter.disconnect(this._panelsId);
-        this._panelsId = 0;
+        Main.extensionManager?.disconnectObject(this);
+        this._disconnectEmitter();
         this._detach();
     }
 }

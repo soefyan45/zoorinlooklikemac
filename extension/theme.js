@@ -107,6 +107,8 @@ function accentCss(accent, light) {
 ${both('.zorin-notch-tile-circle:checked', '.zorin-notch-switch:checked', '.zorin-notch-menu-icon.accent',
         '.zorin-notch-unread-dot', '.zorin-notch-activity-dot:waiting')} { background-color: ${color}; }
 ${both('.zorin-notch-tile-circle:checked .zorin-notch-icon', '.zorin-notch-menu-icon.accent .zorin-notch-icon')} { color: ${on}; }
+/* Dock dots for apps with open windows: zorin-taskbar draws them in this widget's color */
+.app-grid-running-dot { background-color: ${color}; }
 .zorin-notch-search-entry { caret-color: ${color}; }
 .zorin-notch-search-row:selected { background-color: ${color}; }
 .zorin-notch-search-row:selected .zorin-notch-search-name,

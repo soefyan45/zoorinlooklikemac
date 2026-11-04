@@ -191,6 +191,28 @@ async function testDockZoom(extension, shotDir) {
     check('dock icon returns to normal size', Math.abs(icon.scale_x - 1) < 0.01, icon.scale_x.toFixed(2));
 }
 
+// zorin-taskbar disabled and enabled again (it makes a new emitter): the dock must get its zoom,
+// compact icons and glass plate back instead of turning into the plain bar
+async function testDockSurvivesTaskbarRestart(extension) {
+    const zoom = extension._dockZoom;
+    const uuid = 'zorin-taskbar@zorinos.com';
+    if (!zoom || !Main.extensionManager.lookup(uuid)) {
+        check('dock survives a taskbar restart', false, 'no dock zoom or taskbar');
+        return;
+    }
+    const before = zoom._plates.size;
+    Main.extensionManager.disableExtension(uuid);
+    await wait(500);
+    check('dock lets go when the taskbar is disabled', zoom._plates.size === 0 && zoom._watched.size === 0,
+        `plates=${zoom._plates.size} watched=${zoom._watched.size}`);
+    Main.extensionManager.enableExtension(uuid);
+    for (let i = 0; i < 20 && zoom._plates.size < before; i++)
+        await wait(500);
+    check('dock zoom and plate return after the taskbar is enabled again',
+        before > 0 && zoom._plates.size === before && zoom._watched.size === before,
+        `before=${before} plates=${zoom._plates.size} watched=${zoom._watched.size}`);
+}
+
 // Coding agents: the D-Bus service, the activity row (04) and the agent popup (08). The real
 // Claude Code hook script is run too, against the nested session bus.
 function callAgentEvent(...args) {
@@ -402,6 +424,14 @@ async function testTheme(extension, shotDir) {
     check('light surface for the expanded notch', notch._surface().solidTop === false, notch._surface().fill);
     const css = new TextDecoder().decode(extension._theme._file.load_contents(null)[1]);
     check('accent goes into the theme stylesheet', css.includes('#0A84FF'));
+    // zorin-taskbar draws the dots of apps with open windows in this widget's background color
+    const dot = new St.Widget({style_class: 'app-grid-running-dot'});
+    Main.uiGroup.add_child(dot);
+    const dotColor = dot.get_theme_node().get_background_color();
+    dot.destroy();
+    check('dock running dots take the accent color',
+        dotColor.red === 0x0A && dotColor.green === 0x84 && dotColor.blue === 0xFF,
+        `${dotColor.red},${dotColor.green},${dotColor.blue}`);
     const [plate] = [...(extension._dockZoom?._plates?.values() ?? [])];
     if (plate)
         check('dock glass turns light', (plate.plate.get_style() ?? '').includes('255, 255, 255'), plate.plate.get_style());
@@ -647,6 +677,7 @@ export async function runSelfTest(extension) {
         await testLanguage(extension);
         await testTheme(extension, shotDir);
         await testFloatingAndOverview(extension, shotDir);
+        await testDockSurvivesTaskbarRestart(extension);
 
         notch.freezePointer(false);
         notch.setState(State.IDLE);
