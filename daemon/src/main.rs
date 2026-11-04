@@ -8,12 +8,15 @@
 //! - `event <agent> <session> <state> <project> [message]`: the same report from any agent,
 //!   used by the opencode plugin.
 //! - `daemon`: the D-Bus service io.github.soefyan45.ZorinNotchd, started on demand by
-//!   D-Bus activation. In this version it only answers Ping; file search and two-way
-//!   permissions come later (docs/PLAN-RUST.md).
+//!   D-Bus activation. It answers Ping and Search (files and document contents through
+//!   GNOME's Tracker index); two-way permissions come later (docs/PLAN-RUST.md).
+//! - `search <words>`: the same search from the command line, for trying it out.
 //! - `install-service` / `uninstall-service`: the D-Bus activation file.
 //!
 //! Hooks never block or fail the agent: the report is sent without waiting for a reply,
 //! everything is bounded by a short timeout, and the exit code is always 0.
+
+mod search;
 
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -124,6 +127,41 @@ impl Daemon {
     fn ping(&self) -> String {
         VERSION.to_string()
     }
+
+    /// Files by name and, with `content`, by the text inside them. Rows are
+    /// (kind, title, uri, snippet, mime); kind is file, folder or document, `limit` applies
+    /// to names and to contents separately. Snippets mark matches with « ». Empty when
+    /// Tracker is not running.
+    async fn search(
+        &self,
+        query: String,
+        limit: u32,
+        files: bool,
+        content: bool,
+        #[zbus(connection)] conn: &Connection,
+    ) -> Vec<(String, String, String, String, String)> {
+        search::search(conn, &query, limit.clamp(1, 50) as usize, files, content)
+            .await
+            .into_iter()
+            .map(|h| (h.kind.to_string(), h.title, h.uri, h.snippet, h.mime))
+            .collect()
+    }
+}
+
+async fn search_cli(words: &[String]) {
+    let Ok(conn) = Connection::session().await else {
+        eprintln!("zorin-notchd: no session bus");
+        return;
+    };
+    let started = std::time::Instant::now();
+    let hits = search::search(&conn, &words.join(" "), 8, true, true).await;
+    for h in &hits {
+        println!("{:<9} {}\n          {}", h.kind, h.title, h.uri);
+        if !h.snippet.is_empty() {
+            println!("          {}", h.snippet);
+        }
+    }
+    eprintln!("{} hits in {} ms", hits.len(), started.elapsed().as_millis());
 }
 
 async fn run_daemon() -> zbus::Result<()> {
@@ -167,6 +205,7 @@ const USAGE: &str = "usage: zorin-notchd <command>
   hook claude                                   Claude Code hook (JSON on stdin)
   event <agent> <session> <state> <project> [message]
                                                 report an agent state (working, waiting, done, end)
+  search <words>                                search files and document contents (Tracker)
   daemon                                        run the D-Bus service
   install-service | uninstall-service           D-Bus activation file
   --version";
@@ -177,6 +216,7 @@ async fn main() {
     match args.iter().map(String::as_str).collect::<Vec<_>>().as_slice() {
         ["hook", "claude"] => hook_claude().await,
         ["event", ..] => event(&args[1..]).await,
+        ["search", ..] => search_cli(&args[1..]).await,
         ["daemon"] => {
             if let Err(e) = run_daemon().await {
                 eprintln!("zorin-notchd: {e}");
