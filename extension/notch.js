@@ -235,6 +235,9 @@ export class Notch {
         this._agentView = new AgentView({
             open: entry => this._closeThen(() => this._agents.focus(entry)),
             dismiss: () => this.setState(State.IDLE),
+            allow: entry => this._agents.answer(entry.id, true),
+            deny: entry => this._agents.answer(entry.id, false),
+            waiting: () => this._agents.permissionCount,
         });
         this._agents = new AgentTracker({
             onChange: () => this._onAgentsChanged(),
@@ -242,6 +245,9 @@ export class Notch {
                 if (this._settings?.get_boolean('show-agents') ?? true)
                     this._queuePopup({agentEntry: entry});
             },
+            onPermission: () => this._onPermissionChanged(),
+            permissionsEnabled: () => (this._settings?.get_boolean('show-agents') ?? true) &&
+                (this._settings?.get_boolean('agent-permissions') ?? true),
         });
         this._powerView = new PowerView(power, () =>
             this._battery?.present ? this._battery.percentage : null);
@@ -342,7 +348,35 @@ export class Notch {
         this._showNextPopup();
     }
 
+    // A permission request stays on the notch until it is answered or closed. It takes the
+    // place of an agent popup; other states let it wait until they are done.
+    _showPermission() {
+        const entry = this._agents?.permission;
+        if (!entry)
+            return false;
+        if (this._state !== State.AGENT && !INTERRUPTIBLE.has(this._state))
+            return false;
+        if (this._state !== State.AGENT || this._agentView.entry?.id !== entry.id) {
+            this._agentView.show(entry);
+            this.setState(State.AGENT);
+            this._fitHeight();
+        }
+        this._clearAutoClose();
+        return true;
+    }
+
+    _onPermissionChanged() {
+        if (!this._agentView)
+            return;
+        if (this._agents.permission)
+            this._showPermission();
+        else if (this._state === State.AGENT && this._agentView.entry?.permission)
+            this.setState(State.IDLE);
+    }
+
     _showNextPopup() {
+        if (this._showPermission())
+            return;
         if (!this._popupQueue.length)
             return;
         if (!INTERRUPTIBLE.has(this._state)) {
@@ -558,7 +592,7 @@ export class Notch {
         this._setModal(MODAL.has(state));
 
         // Queued popups wait for the notch to be free
-        if (INTERRUPTIBLE.has(state) && this._popupQueue.length && !this._popupId) {
+        if (INTERRUPTIBLE.has(state) && (this._popupQueue.length || this._agents?.permission) && !this._popupId) {
             this._popupId = GLib.idle_add(GLib.PRIORITY_DEFAULT, () => {
                 this._popupId = 0;
                 this._showNextPopup();

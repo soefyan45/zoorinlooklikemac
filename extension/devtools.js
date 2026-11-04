@@ -284,6 +284,133 @@ async function testFileSearch(extension, notch, shotDir) {
     }
 }
 
+// Permissions: the real daemon and the real hook, against the nested session bus. The hook
+// waits; the notch shows Allow / Deny; the answer reaches the hook's stdout.
+function findByStyle(actor, styleClass) {
+    if (actor.has_style_class_name?.(styleClass))
+        return actor;
+    for (const child of actor.get_children()) {
+        const found = findByStyle(child, styleClass);
+        if (found)
+            return found;
+    }
+    return null;
+}
+
+async function testPermissions(extension, notch, shotDir) {
+    const rust = GLib.build_filenamev([GLib.get_home_dir(), '.local', 'bin', 'zorin-notchd']);
+    if (!GLib.file_test(rust, GLib.FileTest.IS_EXECUTABLE)) {
+        console.log(LOG_PREFIX, 'SKIP permissions (zorin-notchd is not installed)');
+        return;
+    }
+    const settings = extension.getSettings();
+    const daemon = Gio.Subprocess.new([rust, 'daemon'], Gio.SubprocessFlags.NONE);
+    const runHook = (tool, input) => {
+        const proc = new Gio.Subprocess({
+            argv: [rust, 'hook', 'claude'],
+            flags: Gio.SubprocessFlags.STDIN_PIPE | Gio.SubprocessFlags.STDOUT_PIPE,
+        });
+        proc.init(null);
+        const payload = JSON.stringify({
+            hook_event_name: 'PermissionRequest', session_id: 'sesi-izin', cwd: '/tmp/proyek-izin',
+            tool_name: tool, tool_input: input,
+        });
+        const result = new Promise(resolve => proc.communicate_utf8_async(payload, null, (p, res) => {
+            try {
+                resolve(p.communicate_utf8_finish(res)[1]);
+            } catch (_e) {
+                resolve(null);
+            }
+        }));
+        // A broken hook must not hold the test for its whole minute
+        const bounded = Promise.race([result, wait(6000).then(() => 'STILL WAITING')]);
+        return {proc, result: bounded};
+    };
+    const decision = out => {
+        try {
+            return JSON.parse(out).hookSpecificOutput.decision.behavior;
+        } catch (_e) {
+            return out || 'none';
+        }
+    };
+    try {
+        await wait(1000);
+        notch.setState(State.IDLE);
+        await wait(500);
+
+        const allowed = runHook('Bash', {command: 'ls -la /tmp'});
+        await wait(1500);
+        const entry = notch._agents.permission;
+        check('permission request reaches the notch',
+            !!entry && entry.tool === 'Bash' && entry.detail === 'ls -la /tmp' && entry.project === 'proyek-izin',
+            JSON.stringify(entry && {tool: entry.tool, detail: entry.detail, project: entry.project}));
+        check('notch shows Allow and Deny', notch.state === State.AGENT && notch._agentView.entry?.id === entry?.id &&
+            !!findByStyle(notch._agentView.actor, 'zorin-notch-ai-button') &&
+            !!findByStyle(notch._agentView.actor, 'zorin-notch-notif-button'), notch.state);
+        check('no auto close while it waits', !notch._autoCloseId);
+        if (shotDir)
+            await screenshot(`${shotDir}/permission.png`);
+        findByStyle(notch._agentView.actor, 'zorin-notch-ai-button').emit('clicked', 0);
+        const allowResult = decision(await allowed.result);
+        check('Allow gives the hook an allow decision', allowResult === 'allow', allowResult);
+        await wait(500);
+        check('notch lets go after the answer', !notch._agents.permission && notch.state !== State.AGENT, notch.state);
+
+        const denied = runHook('Bash', {command: `cd /var/www && ${'git log --oneline --decorate --all && '.repeat(7)}echo done`});
+        await wait(1500);
+        if (shotDir)
+            await screenshot(`${shotDir}/permission-long.png`);
+        findByStyle(notch._agentView.actor, 'zorin-notch-notif-button').emit('clicked', 0);
+        const denyResult = decision(await denied.result);
+        check('Deny gives the hook a deny decision', denyResult === 'deny', denyResult);
+        await wait(500);
+
+        // Two at once: first one, then the other
+        const first = runHook('Bash', {command: 'echo one'});
+        await wait(800);
+        const second = runHook('Bash', {command: 'echo two'});
+        await wait(1200);
+        check('two requests queue up', notch._agents.permissionCount === 2, `${notch._agents.permissionCount}`);
+        findByStyle(notch._agentView.actor, 'zorin-notch-ai-button').emit('clicked', 0);
+        await wait(800);
+        check('the next request shows after the first is answered',
+            notch._agentView.entry?.detail === 'echo two' && notch.state === State.AGENT,
+            `${notch._agentView.entry?.detail} ${notch.state}`);
+        findByStyle(notch._agentView.actor, 'zorin-notch-notif-button').emit('clicked', 0);
+        const answers = [decision(await first.result), decision(await second.result)];
+        check('each hook gets its own answer', answers.join() === 'allow,deny', answers.join());
+
+        // Answered in the terminal: Claude Code ends the hook, the notch lets go
+        const gone = runHook('Bash', {command: 'pwd'});
+        await wait(1500);
+        check('request shows again', !!notch._agents.permission);
+        gone.proc.force_exit();
+        await wait(3000);
+        check('notch drops a request whose hook is gone', !notch._agents.permission && notch.state !== State.AGENT,
+            `${notch._agents.permission?.detail} ${notch.state}`);
+
+        // Not for the notch: too long to read in full, or a question to the user
+        const long = runHook('Bash', {command: 'x'.repeat(400)});
+        const question = runHook('AskUserQuestion', {questions: []});
+        const longResult = decision(await long.result);
+        const questionResult = decision(await question.result);
+        check('a command too long to show goes to the terminal', longResult === 'none' && !notch._agents.permission, longResult);
+        check('a question to the user goes to the terminal', questionResult === 'none', questionResult);
+
+        // Switched off: no wait at all
+        settings.set_boolean('agent-permissions', false);
+        const off = runHook('Bash', {command: 'ls'});
+        const offResult = decision(await off.result);
+        check('switched off: the hook asks the terminal at once', offResult === 'none' && !notch._agents.permission, offResult);
+    } finally {
+        settings.reset('agent-permissions');
+        daemon.force_exit();
+        notch._agents.handle({agent: 'claude', session: 'sesi-izin', event: 'end', project: 'proyek-izin', message: ''});
+        notch.setState(State.IDLE);
+        await wait(500);
+    }
+}
+
 // Coding agents: the D-Bus service, the activity row (04) and the agent popup (08). The real
 // Claude Code hook script is run too, against the nested session bus.
 function callAgentEvent(...args) {
@@ -745,6 +872,7 @@ export async function runSelfTest(extension) {
         await testFileSearch(extension, notch, shotDir);
         await testDockZoom(extension, shotDir);
         await testAgents(notch, shotDir);
+        await testPermissions(extension, notch, shotDir);
         await testSettings(extension, notch);
         await testLanguage(extension);
         await testTheme(extension, shotDir);

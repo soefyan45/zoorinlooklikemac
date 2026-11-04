@@ -5,6 +5,7 @@ import Clutter from 'gi://Clutter';
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 import GObject from 'gi://GObject';
+import Pango from 'gi://Pango';
 import Shell from 'gi://Shell';
 import St from 'gi://St';
 
@@ -642,6 +643,9 @@ export class ActivityRow {
  * Agent popup (state 08): teal badge with the agent, project and time, what happened,
  * and Buka (focus its window) / Abaikan.
  * actions: {open(entry), dismiss()}
+ * A permission request (entry.permission) shows the tool and what it will do, with Allow and
+ * Deny; it has no Dismiss, it stays until answered or closed.
+ * permission actions: {allow(entry), deny(entry), waiting() -> number of requests}
  */
 export class AgentView {
     constructor(actions) {
@@ -661,9 +665,14 @@ export class AgentView {
             y_align: Clutter.ActorAlign.CENTER,
         }));
         head.add_child(label(entry.project || 'agent', 'zorin-notch-agent-source', {x_expand: true}));
-        head.add_child(label(_('now'), 'zorin-notch-agent-source'));
+        const waiting = entry.permission ? this._actions.waiting?.() ?? 1 : 1;
+        head.add_child(label(waiting > 1 ? _('{0} waiting', waiting) : _('now'), 'zorin-notch-agent-source'));
         this.actor.add_child(head);
 
+        if (entry.permission) {
+            this._showPermission(entry);
+            return;
+        }
         this.actor.add_child(label(_(AGENT_TITLE[entry.status] ?? entry.status), 'zorin-notch-agent-title'));
         if (entry.message)
             this.actor.add_child(label(agentMessage(entry.message), 'zorin-notch-agent-message'));
@@ -685,6 +694,44 @@ export class AgentView {
         skip.connect('clicked', () => this._actions.dismiss());
         actionsRow.add_child(open);
         actionsRow.add_child(skip);
+        this.actor.add_child(actionsRow);
+    }
+
+    _showPermission(entry) {
+        this.actor.add_child(label(_('Needs permission for {0}', entry.tool), 'zorin-notch-agent-title'));
+        // The whole command, wrapped: what is allowed must be readable in full
+        const detail = label(entry.detail, 'zorin-notch-agent-message', {x_expand: true});
+        detail.clutter_text.set({
+            line_wrap: true,
+            line_wrap_mode: Pango.WrapMode.WORD_CHAR,
+            ellipsize: Pango.EllipsizeMode.NONE,
+        });
+        this.actor.add_child(detail);
+
+        const actionsRow = new St.BoxLayout({style_class: 'zorin-notch-agent-actions'});
+        const allow = new St.Button({style_class: 'zorin-notch-ai-button', can_focus: true});
+        const allowBox = new St.BoxLayout({style_class: 'zorin-notch-pill-content'});
+        allowBox.add_child(icon('object-select-symbolic', 'zorin-notch-ai-button-icon'));
+        allowBox.add_child(label(_('Allow'), 'zorin-notch-ai-button-label'));
+        allow.child = allowBox;
+        allow.connect('clicked', () => this._actions.allow(entry));
+        const deny = new St.Button({
+            style_class: 'zorin-notch-notif-button',
+            label: _('Deny'),
+            can_focus: true,
+        });
+        deny.connect('clicked', () => this._actions.deny(entry));
+        const open = new St.Button({
+            style_class: 'zorin-notch-link-button',
+            label: _('Open'),
+            x_expand: true,
+            x_align: Clutter.ActorAlign.END,
+            can_focus: true,
+        });
+        open.connect('clicked', () => this._actions.open(entry));
+        actionsRow.add_child(allow);
+        actionsRow.add_child(deny);
+        actionsRow.add_child(open);
         this.actor.add_child(actionsRow);
     }
 

@@ -60,10 +60,11 @@ misalnya folder project di drive `D`.
 | Anggota | Arah | Isi |
 |---|---|---|
 | `Search(s query, u limit, b files, b content) → a(sssss)` | ext → daemon | `kind` (file/folder/document), `title`, `uri`, `snippet` (kata cocok ditandai « »), `mime`; `limit` berlaku per grup. Pencarian lama dibatalkan di sisi extension (`Gio.Cancellable`), jadi tidak ada `CancelSearch` |
-| `Answer(s request_id, b allow)` | ext → daemon | Jawaban izin dari notch |
+| `Ask(s agent, s session, s project, s tool, s detail) → s` | hook → daemon | Hook menunggu; jawaban `allow` / `deny` / `none` (tanya di terminal) |
+| `Answer(s id, b allow) → b` | ext → daemon | Jawaban izin dari notch; false bila id tidak dikenal atau sudah ditutup |
 | signal `AgentChanged(s agent, s session, s state, s project, s message)` | daemon → ext | Pengganti panggilan `AgentEvent` saat ini |
-| signal `PermissionAsked(s id, s agent, s project, s tool, s detail, u timeout_s)` | daemon → ext | Notch menampilkan Allow/Deny |
-| signal `PermissionClosed(s id, s outcome)` | daemon → ext | Dijawab di terminal / timeout |
+| `PermissionAsked(s id, s agent, s session, s project, s tool, s detail, u timeout) → b` | daemon → ext | Panggilan ke layanan extension (bukan signal, supaya daemon tahu notch ada): true bila notch menerima; false bila dimatikan di pengaturan |
+| `PermissionClosed(s id, s reason)` | daemon → ext | Dijawab di terminal / timeout |
 
 ## 4. Fase
 
@@ -91,7 +92,15 @@ Ukur: waktu hook (`hyperfine`) bash vs Rust; target ≥ 5× lebih cepat.
 2. Notch menampilkan state baru: nama tool, detail perintah, tombol **Allow** / **Deny**.
 3. Tidak dijawab → hook mengembalikan "tanya di terminal" (perilaku bawaan Claude), bukan
    allow. Tidak ada auto-allow selain daftar `safe_commands` yang ditulis user sendiri.
-4. Dijawab di terminal lebih dulu → `PermissionClosed` menutup notch.
+4. Dijawab di terminal lebih dulu → `PermissionClosed` menutup notch (daemon melihat koneksi
+   hook hilang).
+5. Perintah yang tidak bisa ditampilkan utuh (> 300 karakter) dan tool yang bertanya ke user
+   (`AskUserQuestion`, `ExitPlanMode`) tidak ditawarkan di notch: langsung ke terminal.
+6. Pengaturan **Jawab izin di notch** (default aktif). Mati → hook tidak menunggu sama sekali.
+
+Belum terkonfirmasi di dokumentasi Claude Code: apakah dialog terminal menunggu hook selesai
+atau muncul bersamaan. Jika menunggu, tanpa jawaban di notch dialog terminal tertunda sampai
+60 detik; ukur saat dipakai, dan kecilkan `TIMEOUT_S` (permission.rs) bila mengganggu.
 
 ### R3 — Pencarian file & isi dokumen (G3)
 1. Daemon menjalankan SPARQL ke Tracker (`org.freedesktop.Tracker3.Miner.Files` endpoint):
@@ -153,7 +162,7 @@ Tampilan **tidak diubah** sampai disetujui terpisah. Urutan kerja:
 |---|---|---|
 | R0 kerangka daemon | Tidak | boleh dikerjakan |
 | R1 hook Rust | Tidak (notch tetap sama, hanya sumber event berganti) | boleh dikerjakan |
-| R2 izin Allow/Deny | **Ya** — state baru di notch | disetujui, berikutnya |
+| R2 izin Allow/Deny | **Ya** — state baru di notch | disetujui, selesai |
 | R3 pencarian file & isi | **Ya** — grup baru di Spotlight | disetujui, selesai |
 | R4 pengaturan | **Ya** — baris baru di Pengaturan | disetujui, selesai (Cari file, Cari isi dokumen; folder pengecualian memakai GNOME Settings → Search) |
 | R5 indeks sendiri | Tidak | opsional |

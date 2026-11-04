@@ -8,14 +8,16 @@
 //! - `event <agent> <session> <state> <project> [message]`: the same report from any agent,
 //!   used by the opencode plugin.
 //! - `daemon`: the D-Bus service io.github.soefyan45.ZorinNotchd, started on demand by
-//!   D-Bus activation. It answers Ping and Search (files and document contents through
-//!   GNOME's Tracker index); two-way permissions come later (docs/PLAN-RUST.md).
+//!   D-Bus activation. It answers Ping, Search (files and document contents through GNOME's
+//!   Tracker index) and Ask/Answer (two-way permissions, see permission.rs).
 //! - `search <words>`: the same search from the command line, for trying it out.
 //! - `install-service` / `uninstall-service`: the D-Bus activation file.
 //!
-//! Hooks never block or fail the agent: the report is sent without waiting for a reply,
-//! everything is bounded by a short timeout, and the exit code is always 0.
+//! Hooks never fail the agent and the exit code is always 0. Reports are sent without waiting
+//! for a reply, under a short timeout; the one hook that waits is Claude's PermissionRequest,
+//! which gives the user a minute to answer on the notch.
 
+mod permission;
 mod search;
 
 use std::io::Read;
@@ -36,6 +38,7 @@ const NOTCH_IFACE: &str = "io.github.soefyan45.ZorinNotch1";
 // This daemon's own service
 const DAEMON_BUS: &str = "io.github.soefyan45.ZorinNotchd";
 const DAEMON_PATH: &str = "/io/github/soefyan45/ZorinNotchd";
+const DAEMON_IFACE: &str = "io.github.soefyan45.ZorinNotchd1";
 
 // A hook gives up after this; the agent must never wait on the notch
 const HOOK_TIMEOUT: Duration = Duration::from_millis(1000);
@@ -108,6 +111,17 @@ async fn hook_claude() {
     let project = project_name(input.get("cwd").and_then(Value::as_str));
     // Errors (notch not running, no session bus) are fine: the agent goes on
     let _ = tokio::time::timeout(HOOK_TIMEOUT, send_event("claude", session, state, &project, &message)).await;
+
+    // A permission prompt: the user may answer on the notch. No answer, no decision: Claude
+    // Code then asks in the terminal as usual.
+    if input.get("hook_event_name").and_then(Value::as_str) == Some("PermissionRequest") {
+        if let Some(request) = permission::request_from_hook(&input, &project) {
+            let outcome = permission::ask_daemon(&request).await;
+            if let Some(decision) = permission::decision_json(outcome) {
+                println!("{decision}");
+            }
+        }
+    }
 }
 
 async fn event(args: &[String]) {
@@ -119,13 +133,41 @@ async fn event(args: &[String]) {
     let _ = tokio::time::timeout(HOOK_TIMEOUT, send_event(agent, session, state, project, &message)).await;
 }
 
-struct Daemon;
+#[derive(Default)]
+struct Daemon {
+    permissions: permission::Pending,
+}
 
 #[interface(name = "io.github.soefyan45.ZorinNotchd1")]
 impl Daemon {
     /// Version of the daemon, to check that it runs
     fn ping(&self) -> String {
         VERSION.to_string()
+    }
+
+    /// A hook asks whether a tool may run. Waits for the user's answer on the notch (at most a
+    /// minute) and returns "allow", "deny" or "none" (ask in the terminal instead).
+    async fn ask(
+        &self,
+        agent: String,
+        session: String,
+        project: String,
+        tool: String,
+        detail: String,
+        #[zbus(connection)] conn: &Connection,
+        #[zbus(header)] header: zbus::message::Header<'_>,
+    ) -> String {
+        let request = permission::Request { agent, session, project, tool, detail };
+        let sender = header.sender().map(|s| s.to_string());
+        permission::ask_notch(&self.permissions, conn, sender.as_deref(), &request)
+            .await
+            .as_str()
+            .to_string()
+    }
+
+    /// The notch's answer to a request. False when it is unknown, closed or already answered.
+    fn answer(&self, id: String, allow: bool) -> bool {
+        self.permissions.answer(&id, allow)
     }
 
     /// Files by name and, with `content`, by the text inside them. Rows are
@@ -167,7 +209,7 @@ async fn search_cli(words: &[String]) {
 async fn run_daemon() -> zbus::Result<()> {
     let _conn = zbus::connection::Builder::session()
         .name(DAEMON_BUS)
-        .serve_at(DAEMON_PATH, Daemon)
+        .serve_at(DAEMON_PATH, Daemon::default())
         .build()
         .await?;
     // Served until the session ends

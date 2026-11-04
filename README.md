@@ -59,6 +59,9 @@ Screenshots from the extension running in a nested GNOME Shell.
 - **Languages** — English (default) and Bahasa Indonesia, chosen in the preferences.
 - **Themes** — dark, light (frosted glass) or following GNOME's dark mode, with an accent
   color (orange, blue, green, purple, pink) for the notch and the dock.
+- **Permissions on the notch** — with the `zorin-notchd` daemon, a Claude Code permission
+  prompt shows the tool and its command on the notch with Allow and Deny. No answer within a
+  minute, or a command too long to read in full, and Claude asks in the terminal as usual.
 - **Floating notch** — optionally a rounded pill a few pixels below the top edge.
 - **Spotlight search** — the notch search (Search button, or press Super and start typing)
   with the selected result highlighted; ↑/↓ to move, Enter to open. With the `zorin-notchd`

@@ -60,7 +60,11 @@ if not remove:
     for event, matcher in [('UserPromptSubmit', None), ('PreToolUse', '*'), ('PostToolUse', '*'),
                            ('Notification', None), ('PermissionRequest', '*'), ('Stop', None),
                            ('SessionEnd', None)]:
-        group = {'hooks': [{'type': 'command', 'command': hook}]}
+        handler = {'type': 'command', 'command': hook}
+        # The permission hook waits for the answer on the notch (a minute, see permission.rs)
+        if event == 'PermissionRequest' and ' hook claude' in hook:
+            handler['timeout'] = 75
+        group = {'hooks': [handler]}
         if matcher:
             group = {'matcher': matcher, **group}
         hooks.setdefault(event, []).append(group)

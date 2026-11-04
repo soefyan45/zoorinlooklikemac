@@ -158,6 +158,10 @@ export default class ZorinNotchPreferences extends ExtensionPreferences {
             'Spotlight also finds text inside documents (indexed by GNOME Tracker)'));
         notchBehavior.add(switchRow(settings, 'show-agents', 'AI agents in the notch',
             'Claude Code and opencode: working, needs permission, finished'));
+        const permissions = switchRow(settings, 'agent-permissions', 'Answer permissions on the notch',
+            'Claude Code asks Allow or Deny on the notch; no answer in a minute and it asks in the terminal');
+        settings.bind('show-agents', permissions, 'sensitive', Gio.SettingsBindFlags.GET);
+        notchBehavior.add(permissions);
         const indicator = choiceRow(settings, 'agent-indicator', 'Working animation',
             'On the standby line while an agent works; hover the notch for details', AGENT_INDICATORS);
         settings.bind('show-agents', indicator, 'sensitive', Gio.SettingsBindFlags.GET);

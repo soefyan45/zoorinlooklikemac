@@ -9,7 +9,12 @@
 //     '"claude"' '"<session id>"' '"working"' '"<project>"' '"<message>"'
 //
 // Events: working (busy), waiting (needs permission or input), done (finished its turn),
-// end (session closed). Nothing is sent back to the agents: the notch only shows state.
+// end (session closed).
+//
+// Permissions go both ways, through the zorin-notchd daemon: it calls PermissionAsked when a
+// Claude Code hook waits for the user, the notch shows Allow / Deny, and the answer goes back
+// to the daemon's Answer. PermissionClosed means the request is gone (answered in the
+// terminal, or too late). Nothing is allowed without an explicit click.
 
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
@@ -29,6 +34,20 @@ const INTERFACE_XML = `
       <arg type="s" name="project" direction="in"/>
       <arg type="s" name="message" direction="in"/>
     </method>
+    <method name="PermissionAsked">
+      <arg type="s" name="id" direction="in"/>
+      <arg type="s" name="agent" direction="in"/>
+      <arg type="s" name="session" direction="in"/>
+      <arg type="s" name="project" direction="in"/>
+      <arg type="s" name="tool" direction="in"/>
+      <arg type="s" name="detail" direction="in"/>
+      <arg type="u" name="timeout" direction="in"/>
+      <arg type="b" name="accepted" direction="out"/>
+    </method>
+    <method name="PermissionClosed">
+      <arg type="s" name="id" direction="in"/>
+      <arg type="s" name="reason" direction="in"/>
+    </method>
   </interface>
 </node>`;
 
@@ -45,6 +64,14 @@ const STALE_MS = 10 * 60 * 1000;
 const SWEEP_SECONDS = 60;
 const FIELD_MAX = 300;
 
+const DAEMON_BUS = 'io.github.soefyan45.ZorinNotchd';
+const DAEMON_PATH = '/io/github/soefyan45/ZorinNotchd';
+const DAEMON_INTERFACE = 'io.github.soefyan45.ZorinNotchd1';
+// More requests than this at once is not a person answering: leave the rest to the terminal
+const MAX_PERMISSIONS = 10;
+// A request that was never closed leaves the notch this long after its timeout
+const PERMISSION_GRACE_S = 5;
+
 export function agentName(agent) {
     return AGENT_NAMES[agent] ?? agent;
 }
@@ -55,12 +82,16 @@ function clean(text) {
 
 export class AgentTracker {
     /**
-     * @param {object} callbacks - {onChange(), onPopup(entry)}
+     * @param {object} callbacks - {onChange(), onPopup(entry), onPermission(),
+     *   permissionsEnabled()}
      */
-    constructor({onChange, onPopup}) {
+    constructor({onChange, onPopup, onPermission = () => {}, permissionsEnabled = () => true}) {
         this._onChange = onChange;
         this._onPopup = onPopup;
+        this._onPermission = onPermission;
+        this._permissionsEnabled = permissionsEnabled;
         this._sessions = new Map();
+        this._permissions = [];
 
         this._dbus = Gio.DBusExportedObject.wrapJSObject(INTERFACE_XML, this);
         this._dbus.export(Gio.DBus.session, OBJECT_PATH);
@@ -80,6 +111,90 @@ export class AgentTracker {
         } catch (e) {
             console.error(LOG_PREFIX, 'agent event failed', e);
         }
+    }
+
+    // D-Bus method: the daemon asks for the user's answer. True when the notch takes the
+    // request, false to let the terminal ask.
+    PermissionAsked(id, agent, session, project, tool, detail, timeout) {
+        let accepted = false;
+        try {
+            accepted = this._addPermission({id, agent, session, project, tool, detail, timeout});
+        } catch (e) {
+            console.error(LOG_PREFIX, 'permission request failed', e);
+        }
+        return new GLib.Variant('(b)', [accepted]);
+    }
+
+    // D-Bus method: the request is gone (answered in the terminal, timed out)
+    PermissionClosed(id, reason) {
+        trace(`permission ${String(id).slice(0, 8)} closed: ${reason}`);
+        this._removePermission(clean(id));
+    }
+
+    _addPermission({id, agent, session, project, tool, detail, timeout}) {
+        id = clean(id);
+        if (!this._permissionsEnabled() || !id || this._permissions.length >= MAX_PERMISSIONS ||
+            this._permissions.some(p => p.id === id))
+            return false;
+        agent = clean(agent).toLowerCase() || 'agent';
+        const entry = {
+            permission: true,
+            id,
+            agent,
+            name: agentName(agent),
+            session: clean(session) || 'default',
+            project: clean(project),
+            tool: clean(tool),
+            detail: clean(detail),
+            status: AgentStatus.WAITING,
+            message: '',
+            updated: Date.now(),
+        };
+        entry.timeoutId = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT,
+            Math.max(1, timeout) + PERMISSION_GRACE_S, () => {
+                entry.timeoutId = 0;
+                this._removePermission(id);
+                return GLib.SOURCE_REMOVE;
+            });
+        this._permissions.push(entry);
+        trace(`permission ${id.slice(0, 8)}: ${entry.tool} ${entry.detail}`);
+        this._onPermission();
+        return true;
+    }
+
+    _removePermission(id) {
+        const index = this._permissions.findIndex(p => p.id === id);
+        if (index < 0)
+            return;
+        const [entry] = this._permissions.splice(index, 1);
+        if (entry.timeoutId)
+            GLib.source_remove(entry.timeoutId);
+        this._onPermission();
+    }
+
+    // The request waiting longest, which the notch shows first
+    get permission() {
+        return this._permissions[0] ?? null;
+    }
+
+    get permissionCount() {
+        return this._permissions.length;
+    }
+
+    // The user's click: tell the daemon, which tells the waiting hook
+    answer(id, allow) {
+        this._removePermission(id);
+        Gio.DBus.session.call(DAEMON_BUS, DAEMON_PATH, DAEMON_INTERFACE, 'Answer',
+            new GLib.Variant('(sb)', [id, allow]), null, Gio.DBusCallFlags.NONE, 3000, null,
+            (connection, res) => {
+                try {
+                    const [known] = connection.call_finish(res).deepUnpack();
+                    if (!known)
+                        console.warn(LOG_PREFIX, 'permission answer came too late');
+                } catch (e) {
+                    console.warn(LOG_PREFIX, 'permission answer failed:', e.message);
+                }
+            });
     }
 
     handle({agent, session, event, project, message}) {
@@ -173,5 +288,10 @@ export class AgentTracker {
         this._dbus?.unexport();
         this._dbus = null;
         this._sessions.clear();
+        for (const entry of this._permissions) {
+            if (entry.timeoutId)
+                GLib.source_remove(entry.timeoutId);
+        }
+        this._permissions = [];
     }
 }
