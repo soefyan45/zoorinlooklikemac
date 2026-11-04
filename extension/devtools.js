@@ -213,6 +213,77 @@ async function testDockSurvivesTaskbarRestart(extension) {
         `before=${before} plates=${zoom._plates.size} watched=${zoom._watched.size}`);
 }
 
+// Spotlight files: a fake daemon on the bus answers Search, so the client, the groups and the
+// settings can be checked without Tracker
+const FAKE_DAEMON_XML = `<node><interface name="io.github.soefyan45.ZorinNotchd1">
+<method name="Search">
+  <arg type="s" direction="in" name="query"/><arg type="u" direction="in" name="limit"/>
+  <arg type="b" direction="in" name="files"/><arg type="b" direction="in" name="content"/>
+  <arg type="a(sssss)" direction="out" name="hits"/>
+</method></interface></node>`;
+
+async function testFileSearch(extension, notch, shotDir) {
+    const settings = extension.getSettings();
+    const calls = [];
+    const exported = Gio.DBusExportedObject.wrapJSObject(FAKE_DAEMON_XML, {
+        Search(query, limit, files, content) {
+            calls.push({query, files, content});
+            return new GLib.Variant('(a(sssss))', [[
+                ['file', 'report.txt', 'file:///home/test/Documents/report.txt', '', 'text/plain'],
+                ['folder', 'Reports', 'file:///home/test/Reports', '', 'inode/directory'],
+                ['document', 'budget.pdf', 'file:///home/test/Documents/budget.pdf', 'the «report» is due', 'application/pdf'],
+            ]]);
+        },
+    });
+    exported.export(Gio.DBus.session, '/io/github/soefyan45/ZorinNotchd');
+    const owner = Gio.bus_own_name_on_connection(Gio.DBus.session, 'io.github.soefyan45.ZorinNotchd',
+        Gio.BusNameOwnerFlags.NONE, null, null);
+    try {
+        check('file search settings default to on',
+            settings.get_boolean('search-files') && settings.get_boolean('search-content'));
+
+        notch.openSearch();
+        await wait(500);
+        const view = notch.spotlight.view;
+        check('hint mentions files', view.entry.hint_text.length > 0 && view.entry.hint_text !== 'Search apps…',
+            view.entry.hint_text);
+        view.entry.text = 'report';
+        await wait(1200);
+        const keys = view._rows.map(r => r.key);
+        check('daemon is asked once, with both kinds', calls.length === 1 && calls[0].query === 'report' &&
+            calls[0].files && calls[0].content, JSON.stringify(calls));
+        check('hits show up as files and document contents',
+            keys.includes('hit:file:///home/test/Documents/report.txt') &&
+            keys.includes('hit:file:///home/test/Reports') &&
+            keys.includes('hit:file:///home/test/Documents/budget.pdf'), keys.join(', '));
+        check('overview row stays last', keys[keys.length - 1] === 'overview', keys.join(', '));
+        check('hits open their folder with Ctrl+Enter',
+            view._rows.filter(r => r.key.startsWith('hit:')).every(r => typeof r.reveal === 'function'));
+        if (shotDir)
+            await screenshotFull(`${shotDir}/search-files.png`);
+
+        // Both kinds off: nothing is asked and nothing is shown
+        settings.set_boolean('search-files', false);
+        settings.set_boolean('search-content', false);
+        notch.spotlight.close();
+        await wait(500);
+        notch.openSearch();
+        await wait(500);
+        view.entry.text = 'report2';
+        await wait(1000);
+        check('no daemon call with the kinds off', calls.length === 1, `${calls.length}`);
+        check('no hits with the kinds off', !view._rows.some(r => r.key.startsWith('hit:')));
+        check('hint goes back to apps only', view.entry.hint_text === 'Search apps…', view.entry.hint_text);
+    } finally {
+        settings.reset('search-files');
+        settings.reset('search-content');
+        notch.spotlight.close();
+        await wait(500);
+        Gio.bus_unown_name(owner);
+        exported.unexport();
+    }
+}
+
 // Coding agents: the D-Bus service, the activity row (04) and the agent popup (08). The real
 // Claude Code hook script is run too, against the nested session bus.
 function callAgentEvent(...args) {
@@ -671,6 +742,7 @@ export async function runSelfTest(extension) {
             await screenshot(`${shotDir}/panel-bell-list.png`);
         notch.setState(State.IDLE);
         await wait(500);
+        await testFileSearch(extension, notch, shotDir);
         await testDockZoom(extension, shotDir);
         await testAgents(notch, shotDir);
         await testSettings(extension, notch);

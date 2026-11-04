@@ -230,7 +230,7 @@ export class Notch {
         this._notificationView = new NotificationView(notificationActions);
         this._listView = new ListView(this._messages, notificationActions);
         // App search lives in a Spotlight box centered on screen, not in the notch
-        this._spotlight = new Spotlight({theme: this._theme});
+        this._spotlight = new Spotlight({theme: this._theme, settings: this._settings});
         this._activityRow = new ActivityRow();
         this._agentView = new AgentView({
             open: entry => this._closeThen(() => this._agents.focus(entry)),

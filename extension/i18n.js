@@ -58,6 +58,10 @@ const STRINGS = {
         'Stopped with an error': 'Berhenti karena error',
         // Search
         'Search apps…': 'Cari aplikasi…',
+        'Search apps and files…': 'Cari aplikasi dan file…',
+        'Applications': 'Aplikasi',
+        'Files': 'File',
+        'Document contents': 'Isi dokumen',
         'App': 'Aplikasi',
         'No matching apps': 'Tidak ada aplikasi yang cocok',
         'Search “{0}” in Overview': 'Cari “{0}” di Overview',
@@ -78,6 +82,10 @@ const STRINGS = {
         'Pink': 'Merah muda',
         'Behavior': 'Perilaku',
         'Search while typing in the overview': 'Cari saat mengetik di overview',
+        'Search files': 'Cari file',
+        'Spotlight also finds files and folders by name': 'Spotlight juga mencari file dan folder berdasarkan nama',
+        'Search document contents': 'Cari isi dokumen',
+        'Spotlight also finds text inside documents (indexed by GNOME Tracker)': 'Spotlight juga mencari teks di dalam dokumen (diindeks GNOME Tracker)',
         'Press Super and start typing: the notch search opens instead of the overview search':
             'Tekan Super lalu ketik: pencarian notch terbuka, bukan pencarian overview',
         'Working animation': 'Animasi saat bekerja',

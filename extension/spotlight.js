@@ -4,11 +4,13 @@
 // holds the keyboard while it is open, and closes on Esc, a click outside, or a launch.
 
 import Clutter from 'gi://Clutter';
+import Gio from 'gi://Gio';
 import Shell from 'gi://Shell';
 import St from 'gi://St';
 
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
+import {FileSearch} from './filesearch.js';
 import {LOG_PREFIX} from './log.js';
 import {SearchView} from './views.js';
 
@@ -19,17 +21,26 @@ const ANIMATION_MS = 160;
 
 export class Spotlight {
     /**
-     * @param {object} options - {theme: ThemeManager or null}
+     * @param {object} options - {theme: ThemeManager or null, settings: Gio.Settings or null};
+     *   without settings Spotlight searches apps only
      */
-    constructor({theme = null} = {}) {
+    constructor({theme = null, settings = null} = {}) {
         this._theme = theme;
         this._grab = null;
+        this._settings = settings;
+        const files = settings ? new FileSearch(settings) : null;
 
         this._view = new SearchView({
             launch: app => this.close(() => app.activate()),
             searchInOverview: query => this.close(() => {
                 Main.overview.show();
                 Main.overview.searchEntry?.set_text(query);
+            }),
+            ...(files && {
+                searchFiles: (query, cancellable) => files.search(query, cancellable),
+                filesEnabled: () => files.enabled,
+                openUri: uri => this.close(() =>
+                    Gio.AppInfo.launch_default_for_uri(uri, global.create_app_launch_context(0, -1))),
             }),
         });
 

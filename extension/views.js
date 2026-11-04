@@ -700,13 +700,34 @@ export class AgentView {
 
 const MAX_SEARCH_RESULTS = 6;
 const SUGGESTED_APPS = 4;
+// Files are searched when the typing pauses, from this many characters on
+const FILE_SEARCH_DELAY_MS = 150;
+const FILE_SEARCH_MIN_CHARS = 2;
+
+// Snippet from the daemon: matches are marked « », shown in bold on one line
+function snippetLabel(snippet) {
+    const text = snippet.replace(/\s+/g, ' ').trim();
+    const markup = GLib.markup_escape_text(text, -1).replaceAll('«', '<b>').replaceAll('»', '</b>');
+    const snippetLine = label('', 'zorin-notch-search-meta', {x_align: Clutter.ActorAlign.START});
+    snippetLine.clutter_text.set_markup(markup);
+    return snippetLine;
+}
+
+function fileIcon(hit) {
+    if (hit.kind === 'folder')
+        return new Gio.ThemedIcon({name: 'folder'});
+    return Gio.content_type_get_icon(hit.mime || 'application/octet-stream');
+}
 
 /**
  * App search in the notch ("Search"), Spotlight style: a large entry, then the matching apps
  * ranked like GNOME's own app search (Shell.AppSystem.search, then by usage), or the most
  * used apps while the entry is empty. The selected row is highlighted with the accent; ↑/↓
  * move it, Enter opens it. The last row hands the query over to the GNOME overview.
- * actions: {launch(app), searchInOverview(query)}
+ * Below the apps come files and document contents from the daemon, when it is there; Ctrl+Enter
+ * on one of them opens its folder.
+ * actions: {launch(app), searchInOverview(query),
+ *   optional: searchFiles(query, cancellable) -> Promise of hits, filesEnabled(), openUri(uri)}
  */
 export class SearchView {
     constructor(actions) {
@@ -714,6 +735,9 @@ export class SearchView {
         this._results = [];
         this._rows = [];
         this._selected = 0;
+        this._hits = [];
+        this._fileSearchTimeout = 0;
+        this._fileSearchCancellable = null;
 
         this.actor = new St.BoxLayout({style_class: 'zorin-notch-search', vertical: true});
         // Kept for the notch's status updates; the Spotlight layout does not show it
@@ -734,6 +758,12 @@ export class SearchView {
                 this._select(this._selected + (key === Clutter.KEY_Down ? 1 : -1));
                 return Clutter.EVENT_STOP;
             }
+            const enter = key === Clutter.KEY_Return || key === Clutter.KEY_KP_Enter;
+            const reveal = this._rows[this._selected]?.reveal;
+            if (enter && reveal && (event.get_state() & Clutter.ModifierType.CONTROL_MASK)) {
+                reveal();
+                return Clutter.EVENT_STOP;
+            }
             return Clutter.EVENT_PROPAGATE;
         });
 
@@ -744,6 +774,8 @@ export class SearchView {
     }
 
     reset() {
+        this._hits = [];
+        this.entry.hint_text = this._actions.filesEnabled?.() ? _('Search apps and files…') : _('Search apps…');
         this.entry.text = '';
         this.update();
     }
@@ -767,13 +799,21 @@ export class SearchView {
             .slice(0, MAX_SEARCH_RESULTS);
     }
 
-    _row({gicon, iconActor, text, meta, onActivate}) {
+    _row({key, gicon, iconActor, text, meta, snippet = '', onActivate, onReveal = null}) {
         const box = new St.BoxLayout({style_class: 'zorin-notch-search-row-content', x_expand: true});
         box.add_child(new St.Bin({
             style_class: 'zorin-notch-search-app-icon',
             child: iconActor ?? new St.Icon({gicon, icon_size: 18, style_class: 'zorin-notch-search-glyph'}),
         }));
-        box.add_child(label(text, 'zorin-notch-search-name', {x_expand: true}));
+        const name = label(text, 'zorin-notch-search-name', {x_expand: true});
+        if (snippet) {
+            const column = new St.BoxLayout({vertical: true, x_expand: true, y_align: Clutter.ActorAlign.CENTER});
+            column.add_child(name);
+            column.add_child(snippetLabel(snippet));
+            box.add_child(column);
+        } else {
+            box.add_child(name);
+        }
         box.add_child(label(meta, 'zorin-notch-search-meta'));
         const row = new St.Button({
             style_class: 'zorin-notch-search-row',
@@ -781,7 +821,9 @@ export class SearchView {
             x_expand: true,
             can_focus: false,
         });
+        row.key = key;
         row.activate = onActivate;
+        row.reveal = onReveal;
         row.connect('clicked', onActivate);
         const index = this._rows.length;
         row.connect('notify::hover', () => {
@@ -808,21 +850,38 @@ export class SearchView {
     update() {
         const query = this.entry.text.trim();
         this._results = this._search(query);
+        if (!query)
+            this._hits = [];
+        this._scheduleFileSearch(query);
+        this._render(query, false);
+    }
+
+    // Draws apps, then files and document contents, then the hand-over to the overview.
+    // With keepSelection the highlighted row stays on the same result (hits arriving late).
+    _render(query, keepSelection) {
+        const selectedKey = keepSelection ? this._rows[this._selected]?.key : null;
         this._list.destroy_all_children();
         this._rows = [];
 
+        const grouped = this._hits.length > 0;
+        if (grouped && this._results.length)
+            this._list.add_child(label(_('Applications'), 'zorin-notch-group-label'));
         for (const app of this._results) {
             this._row({
+                key: `app:${app.get_id()}`,
                 iconActor: app.create_icon_texture(24),
                 text: app.get_name(),
                 meta: _('App'),
                 onActivate: () => this._actions.launch(app),
             });
         }
+        this._addHits(_('Files'), this._hits.filter(h => h.kind !== 'document'));
+        this._addHits(_('Document contents'), this._hits.filter(h => h.kind === 'document'));
         if (query) {
-            if (!this._results.length)
+            if (!this._results.length && !grouped)
                 this._list.add_child(label(_('No matching apps'), 'zorin-notch-list-empty'));
             this._row({
+                key: 'overview',
                 gicon: new Gio.ThemedIcon({name: 'system-search-symbolic'}),
                 text: _('Search “{0}” in Overview', query),
                 meta: 'Overview',
@@ -830,10 +889,62 @@ export class SearchView {
             });
         }
         this._list.visible = this._rows.length > 0;
-        this._select(0);
+        const index = this._rows.findIndex(row => row.key === selectedKey);
+        this._select(index >= 0 ? index : 0);
+    }
+
+    _addHits(title, hits) {
+        if (!hits.length)
+            return;
+        this._list.add_child(label(title, 'zorin-notch-group-label'));
+        for (const hit of hits) {
+            const folder = Gio.File.new_for_uri(hit.uri).get_parent();
+            this._row({
+                key: `hit:${hit.uri}`,
+                gicon: fileIcon(hit),
+                text: hit.title,
+                meta: folder?.get_basename() ?? '',
+                snippet: hit.snippet,
+                onActivate: () => this._actions.openUri(hit.uri),
+                onReveal: folder ? () => this._actions.openUri(folder.get_uri()) : null,
+            });
+        }
+    }
+
+    // Files are looked up when the typing pauses; an older answer never replaces a newer query
+    _scheduleFileSearch(query) {
+        this._cancelFileSearch();
+        if (query.length < FILE_SEARCH_MIN_CHARS || !this._actions.searchFiles || !this._actions.openUri)
+            return;
+        this._fileSearchTimeout = GLib.timeout_add(GLib.PRIORITY_DEFAULT, FILE_SEARCH_DELAY_MS, () => {
+            this._fileSearchTimeout = 0;
+            this._searchFiles(query);
+            return GLib.SOURCE_REMOVE;
+        });
+    }
+
+    async _searchFiles(query) {
+        const cancellable = new Gio.Cancellable();
+        this._fileSearchCancellable = cancellable;
+        const hits = await this._actions.searchFiles(query, cancellable);
+        if (cancellable.is_cancelled())
+            return;
+        this._fileSearchCancellable = null;
+        this._hits = hits;
+        this._render(query, true);
+    }
+
+    _cancelFileSearch() {
+        if (this._fileSearchTimeout) {
+            GLib.source_remove(this._fileSearchTimeout);
+            this._fileSearchTimeout = 0;
+        }
+        this._fileSearchCancellable?.cancel();
+        this._fileSearchCancellable = null;
     }
 
     destroy() {
+        this._cancelFileSearch();
         this.actor.destroy();
     }
 }

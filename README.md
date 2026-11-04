@@ -61,7 +61,10 @@ Screenshots from the extension running in a nested GNOME Shell.
   color (orange, blue, green, purple, pink) for the notch and the dock.
 - **Floating notch** — optionally a rounded pill a few pixels below the top edge.
 - **Spotlight search** — the notch search (Search button, or press Super and start typing)
-  with the selected result highlighted; ↑/↓ to move, Enter to open.
+  with the selected result highlighted; ↑/↓ to move, Enter to open. With the `zorin-notchd`
+  daemon (`scripts/install-daemon.sh`) it also finds files and folders by name and text inside
+  documents, through GNOME's Tracker index; Ctrl+Enter opens the folder. Both can be switched
+  off in the preferences.
 
 ## Requirements
 

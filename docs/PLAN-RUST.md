@@ -59,8 +59,7 @@ misalnya folder project di drive `D`.
 
 | Anggota | Arah | Isi |
 |---|---|---|
-| `Search(s query, u limit) → a(sssssd)` | ext → daemon | `kind` (file/document/folder), `title`, `uri`, `snippet`, `mime`, `score` |
-| `CancelSearch(u id)` | ext → daemon | Batalkan pencarian lama saat user terus mengetik |
+| `Search(s query, u limit, b files, b content) → a(sssss)` | ext → daemon | `kind` (file/folder/document), `title`, `uri`, `snippet` (kata cocok ditandai « »), `mime`; `limit` berlaku per grup. Pencarian lama dibatalkan di sisi extension (`Gio.Cancellable`), jadi tidak ada `CancelSearch` |
 | `Answer(s request_id, b allow)` | ext → daemon | Jawaban izin dari notch |
 | signal `AgentChanged(s agent, s session, s state, s project, s message)` | daemon → ext | Pengganti panggilan `AgentEvent` saat ini |
 | signal `PermissionAsked(s id, s agent, s project, s tool, s detail, u timeout_s)` | daemon → ext | Notch menampilkan Allow/Deny |
@@ -154,17 +153,17 @@ Tampilan **tidak diubah** sampai disetujui terpisah. Urutan kerja:
 |---|---|---|
 | R0 kerangka daemon | Tidak | boleh dikerjakan |
 | R1 hook Rust | Tidak (notch tetap sama, hanya sumber event berganti) | boleh dikerjakan |
-| R2 izin Allow/Deny | **Ya** — state baru di notch | ditunda, perlu persetujuan |
-| R3 pencarian file & isi | **Ya** — grup baru di Spotlight | ditunda, perlu persetujuan |
-| R4 pengaturan | **Ya** — baris baru di Pengaturan | ditunda, perlu persetujuan |
+| R2 izin Allow/Deny | **Ya** — state baru di notch | disetujui, berikutnya |
+| R3 pencarian file & isi | **Ya** — grup baru di Spotlight | disetujui, selesai |
+| R4 pengaturan | **Ya** — baris baru di Pengaturan | disetujui, selesai (Cari file, Cari isi dokumen; folder pengecualian memakai GNOME Settings → Search) |
 | R5 indeks sendiri | Tidak | opsional |
 
-Daemon untuk R3 boleh disiapkan lebih dulu tanpa tampilan (diuji lewat
-`zorin-notchd search <q>`), lalu disambungkan ke Spotlight setelah disetujui.
+Urutan yang disetujui: R3 lebih dulu, lalu R2. Daemon R3 diuji lewat
+`zorin-notchd search <q>`; di Spotlight, grup file memakai kelas gaya yang sudah ada.
 
 ## 8. Keputusan terbuka
 
 1. Persetujuan dependensi (§5).
-2. Urutan fase: R1 → R2 → R3, atau R3 (pencarian file) lebih dulu?
-3. R2: perlu daftar `safe_commands` (auto-allow) atau selalu tanya?
+2. ~~Urutan fase~~ — diputuskan: R3 lebih dulu, lalu R2.
+3. ~~R2: `safe_commands`~~ — diputuskan: selalu tanya; tanpa jawaban 60 detik → prompt terminal biasa.
 4. R5 perlu atau cukup Tracker?

@@ -152,6 +152,10 @@ export default class ZorinNotchPreferences extends ExtensionPreferences {
             'Seconds before a clicked status closes by itself', {lower: 2, upper: 30}));
         notchBehavior.add(switchRow(settings, 'spotlight-on-type', 'Search while typing in the overview',
             'Press Super and start typing: the notch search opens instead of the overview search'));
+        notchBehavior.add(switchRow(settings, 'search-files', 'Search files',
+            'Spotlight also finds files and folders by name'));
+        notchBehavior.add(switchRow(settings, 'search-content', 'Search document contents',
+            'Spotlight also finds text inside documents (indexed by GNOME Tracker)'));
         notchBehavior.add(switchRow(settings, 'show-agents', 'AI agents in the notch',
             'Claude Code and opencode: working, needs permission, finished'));
         const indicator = choiceRow(settings, 'agent-indicator', 'Working animation',
