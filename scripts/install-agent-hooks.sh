@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Connect coding agents to Zorin Notch:
-#   - Claude Code: hooks in ~/.claude/settings.json calling ~/.local/share/zorin-notch/claude-hook.sh
-#   - opencode:    ~/.config/opencode/plugins/zorin-notch.js
+#   - Claude Code: hooks in ~/.claude/settings.json calling ~/.local/bin/zorin-notchd hook claude
+#                  (scripts/install-daemon.sh), or ~/.local/share/zorin-notch/claude-hook.sh
+#                  when the Rust binary is not installed
+#   - opencode:    ~/.config/opencode/plugins/zorin-notch.js (uses the binary too when present)
 #
 # Files are copied to the home drive (this repo's drive is mounted only after login).
 # Runs again safely: previous Zorin Notch hooks are replaced, other hooks are kept.
@@ -13,6 +15,7 @@ set -euo pipefail
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 SHARE_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/zorin-notch"
 HOOK="$SHARE_DIR/claude-hook.sh"
+RUST_BIN="$HOME/.local/bin/zorin-notchd"
 CLAUDE_SETTINGS="$HOME/.claude/settings.json"
 OPENCODE_PLUGIN="${XDG_CONFIG_HOME:-$HOME/.config}/opencode/plugins/zorin-notch.js"
 REMOVE=0
@@ -27,8 +30,13 @@ if (( ! REMOVE )); then
     install -m 755 "$REPO_DIR/agents/claude-hook.sh" "$HOOK"
     echo "hook script: $HOOK"
 fi
+COMMAND="$HOOK"
+if [[ -x "$RUST_BIN" ]]; then
+    COMMAND="$RUST_BIN hook claude"
+fi
+(( REMOVE )) || echo "claude code hook command: $COMMAND"
 
-python3 -I - "$CLAUDE_SETTINGS" "$HOOK" "$REMOVE" <<'EOF'
+python3 -I - "$CLAUDE_SETTINGS" "$COMMAND" "$REMOVE" <<'EOF'
 import json, os, sys
 path, hook, remove = sys.argv[1], sys.argv[2], sys.argv[3] == '1'
 settings = json.load(open(path)) if os.path.exists(path) else {}

@@ -4,19 +4,33 @@
 // down or break opencode.
 //
 // Installed into ~/.config/opencode/plugins/ by scripts/install-agent-hooks.sh.
+// Uses ~/.local/bin/zorin-notchd (scripts/install-daemon.sh) when installed, gdbus otherwise.
+
+import { existsSync } from "node:fs"
+import { homedir } from "node:os"
 
 const DEST = "io.github.soefyan45.ZorinNotch"
 const PATH = "/io/github/soefyan45/ZorinNotch"
 const METHOD = "io.github.soefyan45.ZorinNotch1.AgentEvent"
 // Busy updates are throttled per session; state changes always go out
 const WORKING_INTERVAL_MS = 1500
+const RUST_BIN = `${homedir()}/.local/bin/zorin-notchd`
 
 export const ZorinNotchPlugin = async ({ $, directory }) => {
   const project = String(directory ?? "").split("/").filter(Boolean).pop() ?? ""
   const lastWorking = new Map()
+  const rust = existsSync(RUST_BIN)
 
-  // GVariant string literals use the same quoting as JSON strings
   const send = (session, state, message = "") => {
+    // The binary gives up after 1 s on its own and never fails
+    if (rust) {
+      $`${RUST_BIN} event opencode ${session || "default"} ${state} ${project} ${message}`
+        .quiet()
+        .nothrow()
+        .catch(() => {})
+      return
+    }
+    // GVariant string literals use the same quoting as JSON strings
     $`timeout 2 gdbus call --session --dest ${DEST} --object-path ${PATH} --method ${METHOD} ${JSON.stringify("opencode")} ${JSON.stringify(session || "default")} ${JSON.stringify(state)} ${JSON.stringify(project)} ${JSON.stringify(message)}`
       .quiet()
       .nothrow()

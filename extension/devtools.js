@@ -279,6 +279,27 @@ async function testAgents(notch, shotDir) {
         notch._agents.handle({agent: 'claude', session: 'sesi-hook', event: 'end'});
         await wait(300);
     }
+
+    // The Rust hook binary (scripts/install-daemon.sh), as Claude Code and opencode call it
+    const rust = GLib.build_filenamev([GLib.get_home_dir(), '.local', 'bin', 'zorin-notchd']);
+    if (GLib.file_test(rust, GLib.FileTest.IS_EXECUTABLE)) {
+        const json = JSON.stringify({
+            hook_event_name: 'PreToolUse', session_id: 'sesi-rust', cwd: '/tmp/proyek-rust', tool_name: 'Edit',
+        });
+        GLib.spawn_command_line_async(`bash -c ${GLib.shell_quote(`echo ${GLib.shell_quote(json)} | ${rust} hook claude`)}`);
+        GLib.spawn_command_line_async(`${rust} event opencode sesi-rust-oc working proyek-oc 'Running bash'`);
+        await wait(SETTLE_MS);
+        const hooked = notch._agents.active.find(e => e.session === 'sesi-rust');
+        check('zorin-notchd hook claude reaches the notch',
+            !!hooked && hooked.project === 'proyek-rust' && hooked.message === 'Running Edit',
+            hooked ? `${hooked.status} ${hooked.project} "${hooked.message}"` : 'nothing');
+        const event = notch._agents.active.find(e => e.session === 'sesi-rust-oc');
+        check('zorin-notchd event reaches the notch', !!event && event.agent === 'opencode',
+            event ? `${event.agent} ${event.status} ${event.project} "${event.message}"` : 'nothing');
+        GLib.spawn_command_line_async(`${rust} event claude sesi-rust end proyek-rust`);
+        GLib.spawn_command_line_async(`${rust} event opencode sesi-rust-oc end proyek-oc`);
+        await wait(300);
+    }
 }
 
 // Preferences reach the notch and the dock (isolated dconf in the nested session)

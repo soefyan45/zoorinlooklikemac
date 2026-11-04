@@ -4,3 +4,5 @@ backups/
 logs/
 # Compiled at install/test time
 extension/schemas/gschemas.compiled
+# Rust build output (normally ~/.cache/zorin-notchd-target, see scripts/install-daemon.sh)
+daemon/target/
