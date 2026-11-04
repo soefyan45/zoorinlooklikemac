@@ -146,7 +146,23 @@ Tidak ada paket sistem baru: Tracker dan `pdftotext` sudah terpasang.
 | Dua layanan D-Bus selama transisi | Extension mendengar keduanya sampai R1 selesai, lalu `AgentEvent` lama dihapus |
 | Binary di drive `D` tidak ada saat boot | Dipasang ke `~/.local/bin` (drive sistem), sama seperti extension |
 
-## 7. Keputusan terbuka
+## 7. Batas tampilan (keputusan 2026-11-04)
+
+Tampilan **tidak diubah** sampai disetujui terpisah. Urutan kerja:
+
+| Fase | Mengubah tampilan? | Status |
+|---|---|---|
+| R0 kerangka daemon | Tidak | boleh dikerjakan |
+| R1 hook Rust | Tidak (notch tetap sama, hanya sumber event berganti) | boleh dikerjakan |
+| R2 izin Allow/Deny | **Ya** — state baru di notch | ditunda, perlu persetujuan |
+| R3 pencarian file & isi | **Ya** — grup baru di Spotlight | ditunda, perlu persetujuan |
+| R4 pengaturan | **Ya** — baris baru di Pengaturan | ditunda, perlu persetujuan |
+| R5 indeks sendiri | Tidak | opsional |
+
+Daemon untuk R3 boleh disiapkan lebih dulu tanpa tampilan (diuji lewat
+`zorin-notchd search <q>`), lalu disambungkan ke Spotlight setelah disetujui.
+
+## 8. Keputusan terbuka
 
 1. Persetujuan dependensi (§5).
 2. Urutan fase: R1 → R2 → R3, atau R3 (pencarian file) lebih dulu?
