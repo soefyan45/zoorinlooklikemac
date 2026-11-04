@@ -27,6 +27,32 @@ const SURFACE = {
 const VIEWS = ['panel', 'wifi', 'list', 'notif', 'agent', 'power', 'search'];
 
 const STYLE_DIR = GLib.build_filenamev([GLib.get_user_cache_dir(), 'zorin-notch']);
+// Stylesheets are named theme-<shell pid>-<time>.css: a nested test shell shares this folder
+const PID = new Gio.Credentials().get_unix_pid();
+
+// Remove stylesheets left by shells that ended without disabling the extension (logout, crash)
+function removeStale() {
+    let files;
+    try {
+        files = Gio.File.new_for_path(STYLE_DIR).enumerate_children('standard::name',
+            Gio.FileQueryInfoFlags.NONE, null);
+    } catch {
+        return;
+    }
+    for (const info of files) {
+        const name = info.get_name();
+        const owner = /^theme-(\d+)-\d+\.css$/.exec(name)?.[1];
+        // Older names (theme-<time>.css) carry no pid and are always stale
+        const stale = owner ? !GLib.file_test(`/proc/${owner}`, GLib.FileTest.IS_DIR)
+            : /^theme-\d+\.css$/.test(name);
+        if (!stale)
+            continue;
+        try {
+            files.get_child(info).delete(null);
+        } catch {}
+    }
+    files.close(null);
+}
 
 function rgba([r, g, b], a) {
     return `rgba(${r}, ${g}, ${b}, ${a})`;
@@ -119,6 +145,7 @@ export class ThemeManager {
                 this._load();
         }, this);
 
+        removeStale();
         this._apply();
     }
 
@@ -165,7 +192,7 @@ export class ThemeManager {
         const css = (this.isLight ? lightCss() : '') + accentCss(this.accent, this.isLight);
         GLib.mkdir_with_parents(STYLE_DIR, 0o755);
         // A new file name each time: St caches stylesheets by file
-        const file = Gio.File.new_for_path(GLib.build_filenamev([STYLE_DIR, `theme-${Date.now()}.css`]));
+        const file = Gio.File.new_for_path(GLib.build_filenamev([STYLE_DIR, `theme-${PID}-${Date.now()}.css`]));
         try {
             file.replace_contents(new TextEncoder().encode(css), null, false,
                 Gio.FileCreateFlags.REPLACE_DESTINATION, null);
