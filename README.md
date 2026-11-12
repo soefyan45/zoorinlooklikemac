@@ -93,7 +93,7 @@ Then log out and back in (on Wayland GNOME Shell loads new extensions at login).
 ```bash
 ./scripts/rollback.sh backups/<backup made before install>.dconf
 ./scripts/install-agent-hooks.sh --remove
-rm -r ~/.local/share/gnome-shell/extensions/zorin-notch@soefyan45.github.io
+rm -r ~/.local/share/gnome-shell/extensions/zoorinlooklikemac@soefyan45.github.io
 ```
 
 `scripts/backup.sh` saves `/org/gnome/shell/` before every change, and `rollback.sh` restores

@@ -3,7 +3,7 @@
 # The nested session uses its own dconf database, so the main desktop settings are untouched.
 set -euo pipefail
 
-UUID="${UUID:-zorin-notch@soefyan45.github.io}"
+UUID="${UUID:-zoorinlooklikemac@soefyan45.github.io}"
 SIZE="${SIZE:-1440x900}"
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 LOG_DIR="$REPO_DIR/logs"

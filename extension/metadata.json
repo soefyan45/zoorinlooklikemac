@@ -1,10 +1,10 @@
 {
-  "uuid": "zorin-notch@soefyan45.github.io",
-  "name": "Zorin Notch",
-  "description": "Mac-style notch that replaces the top bar on Zorin OS: status, quick settings, notifications and power menu.",
+  "uuid": "zoorinlooklikemac@soefyan45.github.io",
+  "name": "Zoorinlooklikemac",
+  "description": "Mac-style notch and dock for Zorin OS: the notch replaces the top bar (status, quick settings, notifications, power, music, coding agents) and the dock gets zoom and glass.",
   "shell-version": [
     "46"
   ],
   "version-name": "0.0.1",
-  "settings-schema": "org.gnome.shell.extensions.zorin-notch"
+  "settings-schema": "org.gnome.shell.extensions.zoorinlooklikemac"
 }

@@ -3,7 +3,7 @@
 # Usage: rollback.sh [--dry-run] [BACKUP_FILE]   (default: newest file in backups/)
 set -euo pipefail
 
-UUID="${UUID:-zorin-notch@soefyan45.github.io}"
+UUID="${UUID:-zoorinlooklikemac@soefyan45.github.io}"
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 BACKUP_DIR="$REPO_DIR/backups"
 

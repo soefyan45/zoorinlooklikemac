@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <schemalist>
-  <enum id="org.gnome.shell.extensions.zorin-notch.DockAutohide">
+  <enum id="org.gnome.shell.extensions.zoorinlooklikemac.DockAutohide">
     <value nick="off" value="0"/>
     <value nick="all-windows" value="1"/>
     <value nick="focused-window" value="2"/>
     <value nick="maximized-window" value="3"/>
   </enum>
 
-  <schema id="org.gnome.shell.extensions.zorin-notch" path="/org/gnome/shell/extensions/zorin-notch/">
+  <schema id="org.gnome.shell.extensions.zoorinlooklikemac" path="/org.gnome.shell.extensions.zoorinlooklikemac/">
     <key name="language" type="s">
       <choices>
         <choice value="en"/>
@@ -38,7 +38,7 @@
     </key>
 
     <!-- Dock (applied to zorin-taskbar's own settings) -->
-    <key name="dock-autohide" enum="org.gnome.shell.extensions.zorin-notch.DockAutohide">
+    <key name="dock-autohide" enum="org.gnome.shell.extensions.zoorinlooklikemac.DockAutohide">
       <default>'off'</default>
       <summary>Hide the dock when windows overlap it</summary>
     </key>

@@ -4,7 +4,7 @@
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-TARGET="${1:-${XDG_DATA_HOME:-$HOME/.local/share}/gnome-shell/extensions/zorin-notch@soefyan45.github.io}"
+TARGET="${1:-${XDG_DATA_HOME:-$HOME/.local/share}/gnome-shell/extensions/zoorinlooklikemac@soefyan45.github.io}"
 # GNOME's prefs module needs gnome-shell's private typelibs (Shew)
 TYPELIBS=/usr/lib/gnome-shell/girepository-1.0
 

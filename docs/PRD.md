@@ -35,7 +35,7 @@ Membuat desktop Zorin OS 18 tampil seperti macOS **tanpa bar atas**: semua statu
 
 ## 4. Arsitektur
 
-Satu extension GJS (usulan UUID: `zorin-notch@soefyan45.github.io`, belum final) yang **menggambar UI** dan **memanggil komponen GNOME**. Daemon Rust hanya ditambahkan di fase akhir untuk state 04 dan 08.
+Satu extension GJS (usulan UUID: `zoorinlooklikemac@soefyan45.github.io`, belum final) yang **menggambar UI** dan **memanggil komponen GNOME**. Daemon Rust hanya ditambahkan di fase akhir untuk state 04 dan 08.
 
 Jalur akses per fitur:
 - **A** = panggil modul internal GNOME Shell 46 langsung.
