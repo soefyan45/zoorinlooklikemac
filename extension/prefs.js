@@ -4,6 +4,8 @@
 // changes live.
 
 import Adw from 'gi://Adw';
+import Cairo from 'cairo';
+import Gdk from 'gi://Gdk';
 import Gio from 'gi://Gio';
 import Gtk from 'gi://Gtk';
 
@@ -31,12 +33,216 @@ const AGENT_INDICATORS = [
     ['dots', 'Three pulsing dots'],
 ];
 
-const BAR_MODES = [
-    ['line', 'Thin line'],
-    ['notch-status', 'Status notch'],
-    ['bar', 'Full menu bar'],
-    ['islands', 'Glass islands'],
-];
+// Same colors as theme.js (which the preferences cannot import: it needs GNOME Shell)
+const ACCENT_HEX = {orange: '#F05A24', blue: '#0A84FF', green: '#30D158', purple: '#BF5AF2', pink: '#FF375F'};
+
+// Card pickers (Pego "Halaman konfig"): a small drawn preview, a title and a line below
+const CARD_CSS = `
+.zn-cards { margin-top: 4px; }
+.zn-card { padding: 8px; border-radius: 14px; background: alpha(currentColor, 0.06); }
+.zn-card:checked { background: alpha(currentColor, 0.06); box-shadow: inset 0 0 0 2px @accent_bg_color; }
+.zn-card-title { font-weight: 600; }
+.zn-swatch { padding: 4px; min-width: 0; min-height: 0; border-radius: 999px; }
+.zn-swatch:checked { box-shadow: inset 0 0 0 2px @accent_bg_color; }
+`;
+
+function rgba(hex, alpha = 1) {
+    const n = hex.replace('#', '');
+    return [0, 2, 4].map(i => parseInt(n.slice(i, i + 2), 16) / 255).concat(alpha);
+}
+
+function roundRect(cr, x, y, w, h, r) {
+    r = Math.min(r, w / 2, h / 2);
+    cr.newSubPath();
+    cr.arc(x + w - r, y + r, r, -Math.PI / 2, 0);
+    cr.arc(x + w - r, y + h - r, r, 0, Math.PI / 2);
+    cr.arc(x + r, y + h - r, r, Math.PI / 2, Math.PI);
+    cr.arc(x + r, y + r, r, Math.PI, 1.5 * Math.PI);
+    cr.closePath();
+}
+
+function paint(cr, color, alpha = 1) {
+    cr.setSourceRGBA(...rgba(color, alpha));
+    cr.fill();
+}
+
+// A wallpaper with the dock at the bottom, as in the design's previews
+function previewWallpaper(cr, w, h, warm) {
+    const sky = new Cairo.LinearGradient(0, 0, 0, h);
+    sky.addColorStopRGBA(0, ...rgba(warm ? '#E58A55' : '#4A7396'));
+    sky.addColorStopRGBA(1, ...rgba('#1E3A5C'));
+    roundRect(cr, 0, 0, w, h, 8);
+    cr.setSource(sky);
+    cr.fill();
+}
+
+function previewDock(cr, w, h) {
+    roundRect(cr, w / 2 - 45, h - 16, 90, 10, 4);
+    cr.setSourceRGBA(...rgba('#182335', 0.6));
+    cr.fillPreserve();
+    cr.setLineWidth(1);
+    cr.setSourceRGBA(1, 1, 1, 0.28);
+    cr.stroke();
+}
+
+function previewGlass(cr, x, y, w, h) {
+    roundRect(cr, x, y, w, h, h / 2);
+    cr.setSourceRGBA(...rgba('#182335', 0.65));
+    cr.fillPreserve();
+    cr.setLineWidth(1);
+    cr.setSourceRGBA(1, 1, 1, 0.35);
+    cr.stroke();
+}
+
+const BAR_PREVIEWS = {
+    'line': (cr, w) => {
+        roundRect(cr, w / 2 - 20, 0, 40, 3, 1.5);
+        paint(cr, '#000000');
+    },
+    'notch-status': (cr, w) => {
+        roundRect(cr, w / 2 - 50, -6, 100, 18, 5);
+        paint(cr, '#000000');
+        roundRect(cr, w / 2 - 43, 4.5, 26, 3, 1.5);
+        roundRect(cr, w / 2 + 27, 4.5, 16, 3, 1.5);
+        paint(cr, '#FFFFFF');
+    },
+    'bar': (cr, w) => {
+        cr.rectangle(0, 0, w, 10);
+        paint(cr, '#0B0F1A', 0.48);
+        roundRect(cr, w / 2 - 25, -6, 50, 16, 4);
+        paint(cr, '#000000');
+        roundRect(cr, 6, 3.5, 22, 3, 1.5);
+        roundRect(cr, w - 40, 3.5, 34, 3, 1.5);
+        paint(cr, '#FFFFFF');
+    },
+    'islands': (cr, w) => {
+        previewGlass(cr, 5, 3, 30, 8);
+        roundRect(cr, w / 2 - 20, -5, 40, 14, 3);
+        paint(cr, '#000000');
+        previewGlass(cr, w - 65, 3, 30, 8);
+        previewGlass(cr, w - 31, 3, 26, 8);
+    },
+};
+
+// Fill and edge of the detail panel per style, for the previews
+function panelFill(settings, style) {
+    if (style === 'glass')
+        return ['#182335', 0.62, '#FFFFFF', 0.4];
+    if (style === 'glass-accent')
+        return [ACCENT_HEX[settings.get_string('accent')] ?? ACCENT_HEX.orange, 0.5, '#FFFFFF', 0.35];
+    return ['#06080F', 0.8, '#FFFFFF', 0.18];
+}
+
+function drawPanelPreview(cr, w, h, fill, edge) {
+    const [color, alpha, edgeColor, edgeAlpha] = fill;
+    const x = w / 2 - 55;
+    const y = h / 2 - 38;
+    roundRect(cr, x, y, 110, 76, 10);
+    if (edge === 'accent') {
+        const tint = new Cairo.LinearGradient(0, y, 0, y + 76);
+        tint.addColorStopRGBA(0, ...rgba(color, alpha));
+        tint.addColorStopRGBA(0.7, ...rgba('#0B0F1A', 0.8));
+        cr.setSource(tint);
+    } else {
+        cr.setSourceRGBA(...rgba(color, alpha));
+    }
+    cr.fillPreserve();
+    cr.setLineWidth(1);
+    cr.setSourceRGBA(...rgba(edgeColor, edgeAlpha));
+    cr.stroke();
+    roundRect(cr, x + 8, y + 8, 40, 4, 2);
+    paint(cr, '#FFFFFF');
+    roundRect(cr, x + 8, y + 18, 94, 24, 5);
+    roundRect(cr, x + 8, y + 47, 45, 20, 5);
+    roundRect(cr, x + 57, y + 47, 45, 20, 5);
+    paint(cr, '#FFFFFF', 0.12);
+}
+
+/**
+ * A row of cards, one per choice of a string setting; the checked one is the setting's value.
+ * cards: [{value, title, subtitle, draw(cr, w, h)}]
+ */
+function cardPicker(settings, key, cards) {
+    const box = new Gtk.Box({spacing: 12, homogeneous: true, css_classes: ['zn-cards']});
+    const buttons = new Map();
+    let first = null;
+    for (const card of cards) {
+        const area = new Gtk.DrawingArea({content_width: 136, content_height: 80});
+        area.set_draw_func((_area, cr, w, h) => {
+            try {
+                card.draw(cr, w, h);
+            } finally {
+                cr.$dispose();
+            }
+        });
+        const content = new Gtk.Box({orientation: Gtk.Orientation.VERTICAL, spacing: 4});
+        content.append(area);
+        content.append(new Gtk.Label({label: _(card.title), xalign: 0, css_classes: ['zn-card-title']}));
+        if (card.subtitle)
+            content.append(new Gtk.Label({label: _(card.subtitle), xalign: 0, wrap: true, css_classes: ['dim-label', 'caption']}));
+        const button = new Gtk.ToggleButton({child: content, css_classes: ['zn-card'], tooltip_text: _(card.title)});
+        if (first)
+            button.set_group(first);
+        else
+            first = button;
+        button.connect('toggled', () => {
+            if (button.active && settings.get_string(key) !== card.value)
+                settings.set_string(key, card.value);
+        });
+        buttons.set(card.value, {button, area});
+        box.append(button);
+    }
+    const sync = () => {
+        buttons.get(settings.get_string(key))?.button.set_active(true);
+    };
+    sync();
+    settings.connect(`changed::${key}`, sync);
+    // Previews that show the accent follow it
+    settings.connect('changed::accent', () => buttons.forEach(({area}) => area.queue_draw()));
+    return box;
+}
+
+// Round color swatches for a string setting, as the suffix of a row
+function swatchPicker(settings, key, swatches) {
+    const box = new Gtk.Box({spacing: 6, valign: Gtk.Align.CENTER});
+    const buttons = new Map();
+    let first = null;
+    for (const swatch of swatches) {
+        const area = new Gtk.DrawingArea({content_width: 18, content_height: 18});
+        area.set_draw_func((_area, cr, w, h) => {
+            try {
+                cr.arc(w / 2, h / 2, Math.min(w, h) / 2, 0, 2 * Math.PI);
+                const colors = swatch.colors();
+                if (colors.length > 1) {
+                    const gradient = new Cairo.LinearGradient(0, 0, w, 0);
+                    colors.forEach((color, i) => gradient.addColorStopRGBA(i / (colors.length - 1), ...rgba(color)));
+                    cr.setSource(gradient);
+                } else {
+                    cr.setSourceRGBA(...rgba(colors[0]));
+                }
+                cr.fill();
+            } finally {
+                cr.$dispose();
+            }
+        });
+        const button = new Gtk.ToggleButton({child: area, css_classes: ['zn-swatch', 'flat'], tooltip_text: _(swatch.title)});
+        if (first)
+            button.set_group(first);
+        else
+            first = button;
+        button.connect('toggled', () => {
+            if (button.active && settings.get_string(key) !== swatch.value)
+                settings.set_string(key, swatch.value);
+        });
+        buttons.set(swatch.value, {button, area});
+        box.append(button);
+    }
+    const sync = () => buttons.get(settings.get_string(key))?.button.set_active(true);
+    sync();
+    settings.connect(`changed::${key}`, sync);
+    settings.connect('changed::accent', () => buttons.forEach(({area}) => area.queue_draw()));
+    return box;
+}
 
 const SYSTEM_ITEMS = [
     ['cpu-load', 'CPU load'],
@@ -158,7 +364,14 @@ export default class ZorinNotchPreferences extends ExtensionPreferences {
     fillPreferencesWindow(window) {
         const settings = this.getSettings();
         setLanguage(settings.get_string('language'));
-        window.set_default_size(620, 760);
+        window.set_default_size(720, 820);
+        const css = new Gtk.CssProvider();
+        if (css.load_from_string)
+            css.load_from_string(CARD_CSS);
+        else
+            css.load_from_data(CARD_CSS, -1);
+        Gtk.StyleContext.add_provider_for_display(Gdk.Display.get_default(), css,
+            Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION);
         window.title = 'Zorin Notch';
 
         // Dock
@@ -199,6 +412,21 @@ export default class ZorinNotchPreferences extends ExtensionPreferences {
 
         // Notch
         const notch = new Adw.PreferencesPage({title: 'Notch', icon_name: 'preferences-desktop-display-symbolic'});
+
+        // Top bar: four cards with a preview each
+        const barGroup = new Adw.PreferencesGroup({title: _('Top bar'),
+            description: _('What shows at the top while the notch rests')});
+        barGroup.add(cardPicker(settings, 'bar-mode', [
+            {value: 'line', title: 'Thin line', subtitle: 'Cleanest'},
+            {value: 'notch-status', title: 'Status notch', subtitle: 'Clock and battery always visible'},
+            {value: 'bar', title: 'Full menu bar', subtitle: 'Like macOS'},
+            {value: 'islands', title: 'Glass islands', subtitle: 'Clean, the wallpaper shows through'},
+        ].map(card => ({...card, draw: (cr, w, h) => {
+            previewWallpaper(cr, w, h, false);
+            BAR_PREVIEWS[card.value](cr, w, h);
+            previewDock(cr, w, h);
+        }}))));
+        notch.add(barGroup);
         const notchBehavior = new Adw.PreferencesGroup({title: _('Behavior')});
         notchBehavior.add(spinRow(settings, 'notification-seconds', 'Notification time',
             'Seconds before a notification turns back into the line', {lower: 2, upper: 30}));
@@ -229,8 +457,6 @@ export default class ZorinNotchPreferences extends ExtensionPreferences {
         notch.add(notchBehavior);
 
         const notchLook = new Adw.PreferencesGroup({title: _('Appearance')});
-        notchLook.add(choiceRow(settings, 'bar-mode', 'Top bar',
-            'What shows at the top while the notch rests', BAR_MODES));
         notchLook.add(choiceRow(settings, 'notch-style', 'Notch style',
             'Liquid: a lens at rest that drops into a bead toward the pointer', NOTCH_STYLES));
         notchLook.add(switchRow(settings, 'notch-floating', 'Floating notch',
@@ -266,12 +492,42 @@ export default class ZorinNotchPreferences extends ExtensionPreferences {
             {lower: 1, upper: 10}));
         system.add(spinRow(settings, 'system-temp-warning', 'Temperature warning',
             '°C: the dot turns red and the notch tells you once', {lower: 60, upper: 100}));
-        system.add(choiceRow(settings, 'system-panel-style', 'Detail panel style',
-            'Background of the panel that opens on a click', PANEL_STYLES));
-        system.add(choiceRow(settings, 'system-chart-color', 'Chart color', 'CPU load bars', CHART_COLORS));
         for (const row of [items])
             settings.bind('show-system', row, 'sensitive', Gio.SettingsBindFlags.GET);
+
+        // Detail panel: three style cards and the chart color
+        const panelGroup = new Adw.PreferencesGroup({title: _('Detail panel style'),
+            description: _('Background and chart color of the panel that opens when the system info is clicked')});
+        panelGroup.add(cardPicker(settings, 'system-panel-style', PANEL_STYLES.map(([value, title]) => ({
+            value, title, subtitle: '',
+            draw: (cr, w, h) => {
+                previewWallpaper(cr, w, h, true);
+                drawPanelPreview(cr, w, h, panelFill(settings, value), value === 'glass-accent' ? 'accent' : 'plain');
+            },
+        }))));
+        const chartRow = new Adw.ActionRow({title: _('Chart color'), subtitle: _('CPU load bars in the bar and the panel')});
+        chartRow.add_suffix(swatchPicker(settings, 'system-chart-color', CHART_COLORS.map(([value, title]) => ({
+            value, title,
+            colors: () => {
+                if (value === 'accent')
+                    return [ACCENT_HEX[settings.get_string('accent')] ?? ACCENT_HEX.orange];
+                if (value === 'temperature')
+                    return ['#34C759', '#FEBC2E', '#FF453A'];
+                return [{teal: '#4FD1C5', blue: '#0A84FF', purple: '#BF5AF2', white: '#FFFFFF'}[value]];
+            },
+        }))));
+        // Its own group, so it sits below the cards (a group lists its rows before other widgets)
+        const chartGroup = new Adw.PreferencesGroup();
+        chartGroup.add(chartRow);
+
+        // Order as in the design: top bar, system info, detail panel, then the rest
+        for (const group of [notchBehavior, notchLook])
+            notch.remove(group);
         notch.add(system);
+        notch.add(panelGroup);
+        notch.add(chartGroup);
+        notch.add(notchBehavior);
+        notch.add(notchLook);
         window.add(notch);
     }
 }
