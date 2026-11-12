@@ -20,6 +20,8 @@ import {TrayBridge} from './tray.js';
 import {AgentTracker} from './agents.js';
 import {MediaWatcher} from './media.js';
 import {BarMode, TopBar} from './topbar.js';
+import {SystemStats, hotMessage} from './sysinfo.js';
+import {SystemPanel} from './systempanel.js';
 import {Spotlight} from './spotlight.js';
 import {
     ActivityRow, AgentView, ListView, MediaRow, NotificationView, PanelView, PowerView, StatusRow,
@@ -70,6 +72,8 @@ const LIQUID_DROP = 9;
 const LIQUID_DROP_NARROW = 0.87;
 const LIQUID_LEAN = {gain: 0.08, max: 6};
 const LIQUID_STATES = new Set(['idle', 'hover', 'activity']);
+// The status row grows by this much while it shows the CPU load and temperature
+const SYSTEM_ROW_EXTRA = 96;
 
 const POINTER_POLL_MS = 50;
 // Minimum size of the standby line while agent dots light up inside it
@@ -188,7 +192,61 @@ export class Notch {
         this._relayout();
         this._syncFullscreen();
         this.onThemeChanged();
+        this._buildSystem();
         this._syncTopBar();
+    }
+
+    // System info (Pego "Bar sistem"): the numbers, and the detail panel a click opens
+    _buildSystem() {
+        this._system = new SystemStats(this._settings, {
+            onChange: () => this._onSystemChanged(),
+            onHot: temp => Main.notify(...hotMessage(temp)),
+        });
+        this._systemPanel = new SystemPanel({
+            stats: this._system,
+            settings: this._settings,
+            theme: this._theme,
+            openPreferences: () => this._openPreferences?.(),
+        });
+        const openFromRow = () => this._closeThen(() => this._systemPanel.open(this.actor));
+        this._statusRow.systemButton.connect('clicked', openFromRow);
+        this._panelView.statusRow.systemButton.connect('clicked', openFromRow);
+    }
+
+    _systemInfo() {
+        const settings = this._settings;
+        return {
+            stats: settings.get_boolean('show-system') ? this._system?.latest : null,
+            history: this._system?.history ?? [],
+            items: settings.get_strv('system-items'),
+            graph: settings.get_boolean('system-graph'),
+            warning: settings.get_int('system-temp-warning'),
+        };
+    }
+
+    _systemShown() {
+        return !!(this._settings?.get_boolean('show-system') && this._system?.latest?.cpu);
+    }
+
+    _onSystemChanged() {
+        if (!this._system)
+            return;
+        const info = this._systemInfo();
+        this._statusRow.updateSystem(info);
+        this._panelView.statusRow.updateSystem(info);
+        this._topBar?.updateSystem(info);
+        this._systemPanel?.update();
+        // The status row makes room for the CPU info
+        const shown = this._systemShown();
+        if (shown !== this._systemRowShown) {
+            this._systemRowShown = shown;
+            const [w, h] = this._sizeOf(this._state);
+            this._width.target = w;
+            this._height.target = h;
+            this._box = null;
+            this._wake();
+            this._relayout();
+        }
     }
 
     // What shows at the top while the notch rests: the line (or lens), the status notch, a bar
@@ -211,8 +269,10 @@ export class Notch {
                 toggleOverview: () => Main.overview.toggle(),
                 openPanel: () => this.setState(State.PANEL),
                 openList: () => this.setState(State.LIST),
+                openSystem: anchor => this._systemPanel.open(anchor),
             });
             this._syncStatus();
+            this._onSystemChanged();
         }
         // The notch is drawn over the middle of the bar
         const parent = this.actor.get_parent();
@@ -540,6 +600,9 @@ export class Notch {
             return [idle[0] + HOVER_GROW[0], idle[1] + HOVER_GROW[1]];
         case State.NOTIFICATION:
             return [settings.get_int('notification-width'), StateSize.notification[1]];
+        case State.PEEK:
+        case State.STATUS:
+            return [StateSize[state][0] + (this._systemShown() ? SYSTEM_ROW_EXTRA : 0), StateSize[state][1]];
         case State.ACTIVITY: {
             // An agent at work only animates the standby line; dots and music need a slim pill
             const dots = !this._agentsShown() ||
@@ -669,6 +732,14 @@ export class Notch {
             break;
         case 'animations':
             this._syncActivityAnimation();
+            break;
+        case 'show-system':
+        case 'system-items':
+        case 'system-graph':
+        case 'system-temp-warning':
+        case 'system-panel-style':
+        case 'system-chart-color':
+            this._onSystemChanged();
             break;
         case 'bar-mode':
             this._syncTopBar();
@@ -1059,7 +1130,7 @@ export class Notch {
         this.actor.set_position(monitor.x + Math.round((monitor.width - width) / 2), Math.round(top));
         this._area.set_size(width, height);
 
-        const rowWidth = Math.round((StateSize.status[0] - 2 * STATUS_ROW_INSET) * scale);
+        const rowWidth = Math.round((this._sizeOf(State.STATUS)[0] - 2 * STATUS_ROW_INSET) * scale);
         for (const row of [this._statusRow.actor, this._activityRow.actor, this._mediaRow.actor]) {
             row.set_size(rowWidth, Math.round(STATUS_ROW_HEIGHT * scale));
             row.set_position(Math.round((width - rowWidth) / 2), 0);
@@ -1142,6 +1213,9 @@ export class Notch {
     destroy() {
         this._topBar?.destroy();
         this._topBar = null;
+        this._systemPanel?.destroy();
+        this._system?.destroy();
+        this._systemPanel = this._system = null;
         this._holdUnredirect(false);
         this._setModal(false);
         this._clearAutoClose();

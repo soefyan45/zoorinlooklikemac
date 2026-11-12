@@ -4,7 +4,7 @@
 //            dock's glass, so the wallpaper shows between them
 // The notch stays drawn over its middle. The bar reserves its height, so maximized windows
 // start below it, and hides in fullscreen.
-// actions: {toggleOverview(), openPanel(), openList()}
+// actions: {toggleOverview(), openPanel(), openList(), openSystem(anchor)}
 
 import Clutter from 'gi://Clutter';
 import GLib from 'gi://GLib';
@@ -14,6 +14,7 @@ import St from 'gi://St';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
 import {_} from './i18n.js';
+import {SystemChip} from './systempanel.js';
 
 export const BarMode = {
     LINE: 'line',
@@ -59,6 +60,7 @@ export class TopBar {
         appBox.add_child(this._appName);
 
         const [statusGroup, statusBox] = group(() => actions.openPanel(), _('Settings'));
+        this.statusGroup = statusGroup;
         this._network = icon('network-wireless-symbolic');
         this._batteryLabel = label('', 'zorin-notch-topbar-text');
         this._battery = icon('battery-missing-symbolic');
@@ -72,8 +74,15 @@ export class TopBar {
         timeBox.add_child(this._date);
         timeBox.add_child(this._time);
 
+        const [systemGroup, systemBox] = group(() => actions.openSystem(systemGroup), _('System'));
+        this.system = new SystemChip();
+        systemBox.add_child(this.system.actor);
+        this._systemGroup = systemGroup;
+        systemGroup.visible = false;
+
         const right = new St.BoxLayout({style_class: 'zorin-notch-topbar-right', x_expand: true,
             x_align: Clutter.ActorAlign.END});
+        right.add_child(systemGroup);
         right.add_child(statusGroup);
         right.add_child(timeGroup);
         this.actor.add_child(appGroup);
@@ -116,6 +125,11 @@ export class TopBar {
             this._batteryLabel.text = `${battery.percentage}%`;
             this._battery.icon_name = battery.iconName;
         }
+    }
+
+    updateSystem(info) {
+        this.system.update(info);
+        this._systemGroup.visible = this.system.actor.visible;
     }
 
     _place() {

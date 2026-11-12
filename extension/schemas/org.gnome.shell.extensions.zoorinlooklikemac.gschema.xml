@@ -132,6 +132,49 @@
     </key>
 
     <!-- Notch look -->
+    <key name="show-system" type="b">
+      <default>true</default>
+      <summary>CPU load and temperature in the status row or the top bar; a click opens the detail (needs the zorin-notchd daemon)</summary>
+    </key>
+    <key name="system-items" type="as">
+      <default>['cpu-load', 'cpu-temp']</default>
+      <summary>What the top bar shows of the system: cpu-load, cpu-temp, gpu, memory, ssd-temp, network</summary>
+    </key>
+    <key name="system-graph" type="b">
+      <default>true</default>
+      <summary>Small bars of the CPU load next to its number in the top bar</summary>
+    </key>
+    <key name="system-interval" type="i">
+      <range min="1" max="10"/>
+      <default>2</default>
+      <summary>Seconds between system info updates</summary>
+    </key>
+    <key name="system-temp-warning" type="i">
+      <range min="60" max="100"/>
+      <default>80</default>
+      <summary>CPU temperature (°C) that turns the dot red and gives one notification</summary>
+    </key>
+    <key name="system-panel-style" type="s">
+      <choices>
+        <choice value="dark"/>
+        <choice value="glass"/>
+        <choice value="glass-accent"/>
+      </choices>
+      <default>'dark'</default>
+      <summary>Background of the system detail panel</summary>
+    </key>
+    <key name="system-chart-color" type="s">
+      <choices>
+        <choice value="accent"/>
+        <choice value="teal"/>
+        <choice value="blue"/>
+        <choice value="purple"/>
+        <choice value="white"/>
+        <choice value="temperature"/>
+      </choices>
+      <default>'accent'</default>
+      <summary>Color of the CPU load chart</summary>
+    </key>
     <key name="bar-mode" type="s">
       <choices>
         <choice value="line"/>

@@ -94,6 +94,45 @@ const STRINGS = {
         'Search while typing in the overview': 'Cari saat mengetik di overview',
         'Answer permissions on the notch': 'Jawab izin di notch',
         'Claude Code asks Allow or Deny on the notch; no answer in a minute and it asks in the terminal': 'Claude Code bertanya Izinkan atau Tolak di notch; tanpa jawaban dalam semenit, ia bertanya di terminal',
+        'System info': 'Info sistem',
+        'Shown in every top bar mode; click it for the details': 'Tampil di semua mode bar; klik untuk detail',
+        'Show system info': 'Tampilkan info sistem',
+        'CPU load and temperature in the status row or the top bar': 'Beban dan suhu CPU di baris status atau bar atas',
+        'Shown in the top bar': 'Yang tampil di bar atas',
+        'The detail panel always shows everything': 'Panel detail selalu menampilkan semuanya',
+        'CPU load': 'Beban CPU',
+        'CPU temperature': 'Suhu CPU',
+        'SSD temperature': 'Suhu SSD',
+        'Network speed': 'Kecepatan jaringan',
+        'Mini graph': 'Grafik mini',
+        'Small bars of the CPU load next to its number': 'Batang kecil beban CPU di samping angkanya',
+        'Update every': 'Perbarui setiap',
+        'Seconds; less often saves battery': 'Detik; lebih jarang lebih hemat baterai',
+        'Temperature warning': 'Peringatan suhu',
+        '°C: the dot turns red and the notch tells you once': '°C: titik jadi merah dan notch memberi tahu sekali',
+        'Detail panel style': 'Gaya panel detail',
+        'Background of the panel that opens on a click': 'Latar panel yang terbuka saat diklik',
+        'Solid dark': 'Gelap pekat',
+        'Glass (like the dock)': 'Kaca (seperti dock)',
+        'Accent glass': 'Kaca warna aksen',
+        'Chart color': 'Warna grafik',
+        'CPU load bars': 'Batang beban CPU',
+        'Teal': 'Teal',
+        'Purple': 'Ungu',
+        'White': 'Putih',
+        'Follow the temperature': 'Ikut suhu',
+        'System': 'Sistem',
+        'CPU load · {0} threads{1}': 'Beban CPU · {0} thread{1}',
+        'Not available': 'Tidak tersedia',
+        'Memory': 'Memori',
+        'of {0}': 'dari {0}',
+        '{0} free of {1}': '{0} kosong dari {1}',
+        'Network': 'Jaringan',
+        'Updated every {0} s': 'Diperbarui tiap {0} detik',
+        'System Monitor ›': 'Monitor Sistem ›',
+        'System info needs the zorin-notchd daemon': 'Info sistem butuh daemon zorin-notchd',
+        'The CPU is hot': 'CPU panas',
+        '{0}°C, above your warning limit': '{0}°C, di atas batas peringatan',
         'Top bar': 'Bar atas',
         'What shows at the top while the notch rests': 'Yang tampil di atas layar saat notch tidak dipakai',
         'Thin line': 'Garis tipis',
@@ -197,6 +236,12 @@ const AGENT_PATTERNS = [
     [/^Needs permission for (.+)$/, 'Needs permission for {0}'],
     [/^(.+) finished its turn$/, '{0} finished its turn'],
 ];
+
+// A number with the decimal mark of the language: 2.4 or 2,4
+export function decimal(value, digits = 1) {
+    const text = Number(value).toFixed(digits);
+    return current === 'id' ? text.replace('.', ',') : text;
+}
 
 export function agentMessage(message) {
     for (const [pattern, key] of AGENT_PATTERNS) {

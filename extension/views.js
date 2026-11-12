@@ -13,6 +13,7 @@ import {Slider} from 'resource:///org/gnome/shell/ui/slider.js';
 
 import {_, agentMessage} from './i18n.js';
 import {relativeTime} from './messages.js';
+import {SystemChip} from './systempanel.js';
 
 const MAX_OTHER_NETWORKS = 3;
 const MAX_LIST_ROWS = 4;
@@ -175,8 +176,24 @@ export class StatusRow {
         right.add_child(this._batteryLabel);
         right.add_child(this._batteryIcon);
 
+        // CPU load and temperature (hidden without system info); a click opens the detail
+        this.system = new SystemChip({compact: true});
+        this.systemButton = new St.Button({
+            style_class: 'zorin-notch-sys-button',
+            child: this.system.actor,
+            can_focus: true,
+            visible: false,
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+
         this.actor.add_child(this._left);
+        this.actor.add_child(this.systemButton);
         this.actor.add_child(right);
+    }
+
+    updateSystem(info) {
+        this.system.update(info);
+        this.systemButton.visible = this.system.actor.visible;
     }
 
     update({clock, networkIcon, battery}) {

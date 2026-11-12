@@ -872,7 +872,7 @@ async function testBarModes(extension, shotDir) {
             await screenshotFull(`${shotDir}/bar-islands.png`);
 
         // The status island opens the panel
-        bar.actor.get_children()[1].get_children()[0].emit('clicked', 0);
+        bar.statusGroup.emit('clicked', 0);
         await waitSettled(notch);
         check('the status island opens the panel', notch.state === State.PANEL, notch.state);
         notch.setState(State.IDLE);
@@ -883,6 +883,90 @@ async function testBarModes(extension, shotDir) {
         check('line mode removes the bar', !notch._topBar && workTop() === 0, `${!!notch._topBar} ${workTop()}`);
     } finally {
         settings.reset('bar-mode');
+        notch.freezePointer(false);
+        notch.setState(State.IDLE);
+        await waitSettled(notch);
+    }
+}
+
+// System info: the real daemon on the nested bus. CPU load and temperature show in the status
+// row and the glass islands, a click opens the detail panel, the glass styles blur behind it,
+// and a hot CPU gives one notification
+async function testSystem(extension, shotDir) {
+    const rust = GLib.build_filenamev([GLib.get_home_dir(), '.local', 'bin', 'zorin-notchd']);
+    if (!GLib.file_test(rust, GLib.FileTest.IS_EXECUTABLE)) {
+        console.log(LOG_PREFIX, 'SKIP system info (zorin-notchd is not installed)');
+        return;
+    }
+    const notch = extension.notch;
+    const settings = extension.getSettings();
+    const daemon = Gio.Subprocess.new([rust, 'daemon'], Gio.SubprocessFlags.NONE);
+    notch.freezePointer(true);
+    try {
+        await wait(1000);
+        notch._system.refresh();
+        for (let i = 0; i < 30 && !notch._system.latest?.cpu; i++)
+            await wait(250);
+        const stats = notch._system.latest;
+        check('the daemon reports the CPU', typeof stats?.cpu?.load === 'number' && stats.cpu.cores > 0,
+            JSON.stringify(stats?.cpu));
+        check('memory and network come along', stats?.mem?.total > 0 && typeof stats?.net?.rx === 'number');
+        check('the status row shows the CPU', notch._statusRow.systemButton.visible);
+        check('the status notch makes room for it', notch._sizeOf(State.PEEK)[0] === 396, `${notch._sizeOf(State.PEEK)[0]}`);
+
+        settings.set_string('bar-mode', 'islands');
+        await wait(1500);
+        const bar = notch._topBar;
+        check('the islands get a system island', !!bar && bar._systemGroup.visible);
+        if (shotDir)
+            await screenshotFull(`${shotDir}/system-islands.png`);
+
+        bar._systemGroup.emit('clicked', 0);
+        await wait(1200);
+        const panel = notch._systemPanel;
+        check('a click opens the detail panel', panel.isOpen && panel._view.actor.get_n_children() >= 5,
+            `${panel.isOpen} ${panel._view.actor.get_n_children()}`);
+        if (shotDir)
+            await screenshotFull(`${shotDir}/system-panel-dark.png`);
+        panel.close();
+        await wait(500);
+
+        settings.set_string('system-panel-style', 'glass');
+        bar._systemGroup.emit('clicked', 0);
+        await wait(1200);
+        check('the glass style blurs what is behind', !!panel.actor.get_effect('blur') &&
+            panel.actor.has_style_class_name('glass'));
+        if (shotDir)
+            await screenshotFull(`${shotDir}/system-panel-glass.png`);
+        panel.close();
+        await wait(500);
+        settings.set_string('system-panel-style', 'glass-accent');
+        bar._systemGroup.emit('clicked', 0);
+        await wait(1200);
+        if (shotDir)
+            await screenshotFull(`${shotDir}/system-panel-accent.png`);
+        panel.close();
+        await wait(500);
+
+        // Too hot: one notification, not a second while it stays hot
+        notch.setState(State.IDLE);
+        await wait(500);
+        const before = notch._messages.list().length;
+        notch._system._warned = false;
+        notch._system._checkHeat(99);
+        notch._system._checkHeat(99);
+        await wait(1500);
+        check('a hot CPU notifies once', notch._messages.list().length === before + 1,
+            `${before} -> ${notch._messages.list().length}`);
+
+        settings.set_boolean('show-system', false);
+        await wait(800);
+        check('switched off: no system info', !notch._statusRow.systemButton.visible && !bar._systemGroup.visible);
+    } finally {
+        notch._systemPanel?.close();
+        for (const key of ['show-system', 'system-panel-style', 'bar-mode'])
+            settings.reset(key);
+        daemon.force_exit();
         notch.freezePointer(false);
         notch.setState(State.IDLE);
         await waitSettled(notch);
@@ -1141,6 +1225,7 @@ export async function runSelfTest(extension) {
         await testTheme(extension, shotDir);
         await testLiquid(extension, shotDir);
         await testBarModes(extension, shotDir);
+        await testSystem(extension, shotDir);
         await testFloatingAndOverview(extension, shotDir);
         await testDockSurvivesTaskbarRestart(extension);
 

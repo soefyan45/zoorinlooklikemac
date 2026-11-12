@@ -9,8 +9,10 @@
 //!   used by the opencode plugin.
 //! - `daemon`: the D-Bus service io.github.soefyan45.ZorinNotchd, started on demand by
 //!   D-Bus activation. It answers Ping, Search (files and document contents through GNOME's
-//!   Tracker index) and Ask/Answer (two-way permissions, see permission.rs).
+//!   Tracker index), Ask/Answer (two-way permissions, see permission.rs) and Stats (CPU,
+//!   memory, GPU, SSD and network for the notch, see sysinfo.rs).
 //! - `search <words>`: the same search from the command line, for trying it out.
+//! - `stats`: the system info as JSON, for trying it out.
 //! - `install-service` / `uninstall-service`: the D-Bus activation file.
 //!
 //! Hooks never fail the agent and the exit code is always 0. Reports are sent without waiting
@@ -19,6 +21,7 @@
 
 mod permission;
 mod search;
+mod sysinfo;
 
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -136,7 +139,11 @@ async fn event(args: &[String]) {
 #[derive(Default)]
 struct Daemon {
     permissions: permission::Pending,
+    stats: std::sync::Mutex<sysinfo::Sampler>,
 }
+
+/// The first reading needs a second one to measure loads: this far apart
+const STATS_PRIME: Duration = Duration::from_millis(300);
 
 #[interface(name = "io.github.soefyan45.ZorinNotchd1")]
 impl Daemon {
@@ -168,6 +175,20 @@ impl Daemon {
     /// The notch's answer to a request. False when it is unknown, closed or already answered.
     fn answer(&self, id: String, allow: bool) -> bool {
         self.permissions.answer(&id, allow)
+    }
+
+    /// System info as JSON: cpu {load, temp, cores, mhz, model}, mem {used, total}, gpu {name,
+    /// load, temp, ...} or null, ssd {temp} or null, net {rx, tx} in bytes per second, top
+    /// [{name, cpu}]. Loads cover the time since the previous call.
+    async fn stats(&self) -> String {
+        let primed = self.stats.lock().map(|s| s.has_previous()).unwrap_or(false);
+        if !primed {
+            if let Ok(mut sampler) = self.stats.lock() {
+                sampler.prime();
+            }
+            tokio::time::sleep(STATS_PRIME).await;
+        }
+        self.stats.lock().map(|mut s| s.snapshot().to_string()).unwrap_or_default()
     }
 
     /// Files by name and, with `content`, by the text inside them. Rows are
@@ -248,6 +269,7 @@ const USAGE: &str = "usage: zorin-notchd <command>
   event <agent> <session> <state> <project> [message]
                                                 report an agent state (working, waiting, done, end)
   search <words>                                search files and document contents (Tracker)
+  stats                                         system info as JSON
   daemon                                        run the D-Bus service
   install-service | uninstall-service           D-Bus activation file
   --version";
@@ -259,6 +281,12 @@ async fn main() {
         ["hook", "claude"] => hook_claude().await,
         ["event", ..] => event(&args[1..]).await,
         ["search", ..] => search_cli(&args[1..]).await,
+        ["stats"] => {
+            let mut sampler = sysinfo::Sampler::default();
+            sampler.prime();
+            tokio::time::sleep(Duration::from_secs(1)).await;
+            println!("{}", sampler.snapshot());
+        }
         ["daemon"] => {
             if let Err(e) = run_daemon().await {
                 eprintln!("zorin-notchd: {e}");

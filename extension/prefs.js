@@ -38,6 +38,48 @@ const BAR_MODES = [
     ['islands', 'Glass islands'],
 ];
 
+const SYSTEM_ITEMS = [
+    ['cpu-load', 'CPU load'],
+    ['cpu-temp', 'CPU temperature'],
+    ['gpu', 'GPU'],
+    ['memory', 'Memory'],
+    ['ssd-temp', 'SSD temperature'],
+    ['network', 'Network speed'],
+];
+
+const PANEL_STYLES = [
+    ['dark', 'Solid dark'],
+    ['glass', 'Glass (like the dock)'],
+    ['glass-accent', 'Accent glass'],
+];
+
+const CHART_COLORS = [
+    ['accent', 'Accent color'],
+    ['teal', 'Teal'],
+    ['blue', 'Blue'],
+    ['purple', 'Purple'],
+    ['white', 'White'],
+    ['temperature', 'Follow the temperature'],
+];
+
+// One switch per item of a string list setting: on = in the list
+function listSwitchRow(settings, key, value, title) {
+    const row = new Adw.SwitchRow({title: _(title)});
+    const sync = () => {
+        row.active = settings.get_strv(key).includes(value);
+    };
+    sync();
+    row.connect('notify::active', () => {
+        const list = settings.get_strv(key).filter(v => v !== value);
+        if (row.active)
+            list.push(value);
+        if (list.join() !== settings.get_strv(key).join())
+            settings.set_strv(key, list);
+    });
+    settings.connect(`changed::${key}`, sync);
+    return row;
+}
+
 const NOTCH_STYLES = [
     ['classic', 'Classic line'],
     ['liquid', 'Liquid drop'],
@@ -208,6 +250,28 @@ export default class ZorinNotchPreferences extends ExtensionPreferences {
         notchLook.add(switchRow(settings, 'animations', 'Animations',
             'Off = the notch changes size at once, without springs'));
         notch.add(notchLook);
+
+        // System info (needs the zorin-notchd daemon)
+        const system = new Adw.PreferencesGroup({title: _('System info'),
+            description: _('Shown in every top bar mode; click it for the details')});
+        system.add(switchRow(settings, 'show-system', 'Show system info',
+            'CPU load and temperature in the status row or the top bar'));
+        const items = new Adw.ExpanderRow({title: _('Shown in the top bar'),
+            subtitle: _('The detail panel always shows everything')});
+        for (const [value, title] of SYSTEM_ITEMS)
+            items.add_row(listSwitchRow(settings, 'system-items', value, title));
+        system.add(items);
+        system.add(switchRow(settings, 'system-graph', 'Mini graph', 'Small bars of the CPU load next to its number'));
+        system.add(spinRow(settings, 'system-interval', 'Update every', 'Seconds; less often saves battery',
+            {lower: 1, upper: 10}));
+        system.add(spinRow(settings, 'system-temp-warning', 'Temperature warning',
+            '°C: the dot turns red and the notch tells you once', {lower: 60, upper: 100}));
+        system.add(choiceRow(settings, 'system-panel-style', 'Detail panel style',
+            'Background of the panel that opens on a click', PANEL_STYLES));
+        system.add(choiceRow(settings, 'system-chart-color', 'Chart color', 'CPU load bars', CHART_COLORS));
+        for (const row of [items])
+            settings.bind('show-system', row, 'sensitive', Gio.SettingsBindFlags.GET);
+        notch.add(system);
         window.add(notch);
     }
 }
