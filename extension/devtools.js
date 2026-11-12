@@ -458,6 +458,22 @@ async function testMedia(extension, notch, shotDir) {
         if (shotDir)
             await screenshot(`${shotDir}/media-line.png`);
 
+        // The panel's Now playing card
+        notch.setState(State.PANEL);
+        await wait(SETTLE_MS);
+        const card = notch._panelView._nowPlaying;
+        check('panel shows the Now playing card', card.actor.visible && card._title.text === 'Jalan Braga' &&
+            card._artist.text === 'Kolektif Senja', `${card.actor.visible} ${card._title.text}`);
+        check('the card shows the pause button while playing', card.playButton.child.icon_name === 'media-playback-pause-symbolic');
+        if (shotDir)
+            await screenshot(`${shotDir}/media-card.png`);
+        card.playButton.emit('clicked', 0);
+        await wait(400);
+        check('the card button reaches the player', calls.join() === 'PlayPause', calls.join());
+        calls.length = 0;
+        notch.setState(State.IDLE);
+        await wait(500);
+
         notch.setState(State.PEEK);
         await wait(SETTLE_MS);
         check('hover shows the music row instead of the clock', notch._mediaRow.actor.visible &&
@@ -472,6 +488,9 @@ async function testMedia(extension, notch, shotDir) {
 
         state.status = 'Paused';
         exported.emit_property_changed('PlaybackStatus', new GLib.Variant('s', 'Paused'));
+        // The change travels over the bus: wait until the notch has heard it
+        for (let i = 0; i < 20 && notch._media.current?.playing; i++)
+            await wait(250);
         notch.setState(State.IDLE);
         await wait(1000);
         check('paused: the line rests', notch.state === State.IDLE, notch.state);
@@ -479,6 +498,8 @@ async function testMedia(extension, notch, shotDir) {
 
         state.status = 'Playing';
         exported.emit_property_changed('PlaybackStatus', new GLib.Variant('s', 'Playing'));
+        for (let i = 0; i < 20 && !notch._media.current?.playing; i++)
+            await wait(250);
         await wait(1000);
         check('playing again: the line dances', notch.state === State.ACTIVITY, notch.state);
 

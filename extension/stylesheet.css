@@ -498,6 +498,18 @@
     color: rgba(255, 255, 255, 0.7);
 }
 
+.zorin-notch-media-cover.large {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+}
+
+/* Now playing card of the panel: a slimmer tile */
+.zorin-notch-nowplaying {
+    padding: 8px 12px 8px 8px;
+    border-radius: 20px;
+}
+
 .zorin-notch-media-title {
     font-size: 12px;
     font-weight: 600;

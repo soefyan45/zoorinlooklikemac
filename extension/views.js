@@ -182,9 +182,63 @@ class SliderRow {
     }
 }
 
+// Cover of a track: a local file, else the note icon (a web address is not fetched)
+function setCover(coverIcon, track) {
+    coverIcon.gicon = track.artUrl.startsWith('file://')
+        ? new Gio.FileIcon({file: Gio.File.new_for_uri(track.artUrl)})
+        : new Gio.ThemedIcon({name: 'audio-x-generic-symbolic'});
+}
+
 /**
- * Full panel (06): status, quick settings, sliders and actions.
- * actions: {openWifi, showApps, search, openSettings, lockScreen, openPower}
+ * "Now playing" card of the panel: cover, title and artist, previous / play-pause / next.
+ * Hidden while no player is there.
+ * actions: {previous(), playPause(), next()}
+ */
+class NowPlayingCard {
+    constructor(actions) {
+        this.actor = new St.BoxLayout({style_class: 'zorin-notch-tile zorin-notch-nowplaying', x_expand: true});
+        this.actor.visible = false;
+        this._cover = new St.Icon({style_class: 'zorin-notch-media-cover large', icon_size: 40});
+
+        const text = new St.BoxLayout({vertical: true, x_expand: true, y_align: Clutter.ActorAlign.CENTER});
+        this._title = label('', 'zorin-notch-tile-title');
+        this._artist = label('', 'zorin-notch-tile-subtitle');
+        text.add_child(this._title);
+        text.add_child(this._artist);
+
+        const small = (iconName, name, onClick) => {
+            const button = roundButton(iconName, name, onClick);
+            button.add_style_class_name('small');
+            return button;
+        };
+        this.previousButton = small('media-skip-backward-symbolic', _('Previous'), () => actions.previous());
+        this.playButton = small('media-playback-pause-symbolic', _('Play or pause'), () => actions.playPause());
+        this.nextButton = small('media-skip-forward-symbolic', _('Next'), () => actions.next());
+
+        this.actor.add_child(this._cover);
+        this.actor.add_child(text);
+        this.actor.add_child(this.previousButton);
+        this.actor.add_child(this.playButton);
+        this.actor.add_child(this.nextButton);
+    }
+
+    update(track) {
+        this.actor.visible = !!track;
+        if (!track)
+            return;
+        this._title.text = track.title || _('Unknown title');
+        this._artist.text = track.artist;
+        this._artist.visible = !!track.artist;
+        this.playButton.child.icon_name = track.playing
+            ? 'media-playback-pause-symbolic' : 'media-playback-start-symbolic';
+        setCover(this._cover, track);
+    }
+}
+
+/**
+ * Full panel (06): status, quick settings, now playing, sliders and actions.
+ * actions: {openWifi, showApps, search, openSettings, lockScreen, openPower,
+ *   media: {previous, playPause, next}}
  */
 export class PanelView {
     constructor(bridge, actions) {
@@ -200,6 +254,8 @@ export class PanelView {
             new Tile(bridge.dnd, _('Do not disturb'), 'notifications-disabled-symbolic'),
         ];
         this._tiles.forEach(tile => tiles.add_child(tile.actor));
+
+        this._nowPlaying = new NowPlayingCard(actions.media);
 
         const sliders = new St.BoxLayout({style_class: 'zorin-notch-sliders', vertical: true});
         this._sliders = [
@@ -233,6 +289,7 @@ export class PanelView {
 
         const body = new St.BoxLayout({style_class: 'zorin-notch-panel-body', vertical: true});
         body.add_child(tiles);
+        body.add_child(this._nowPlaying.actor);
         body.add_child(sliders);
         body.add_child(this.trayRow);
         body.add_child(actionRow);
@@ -241,8 +298,9 @@ export class PanelView {
         this.actor.add_child(body);
     }
 
-    update({trayVisible = false, unread = 0} = {}) {
+    update({trayVisible = false, unread = 0, track = null} = {}) {
         this._tiles.forEach(tile => tile.update());
+        this._nowPlaying.update(track);
         this._sliders.forEach(row => row.update());
         this.trayRow.visible = trayVisible;
         this._bell.child.icon_name = unread > 0 ? 'notification-new-symbolic' : 'notification-symbolic';
@@ -715,11 +773,7 @@ export class MediaRow {
         this._artist.text = track.artist;
         this._artist.visible = !!track.artist;
         this._playIcon.icon_name = track.playing ? 'media-playback-pause-symbolic' : 'media-playback-start-symbolic';
-        // Cover from a local file; a player that only gives a web address keeps the note icon
-        const local = track.artUrl.startsWith('file://');
-        this._cover.gicon = local
-            ? new Gio.FileIcon({file: Gio.File.new_for_uri(track.artUrl)})
-            : new Gio.ThemedIcon({name: 'audio-x-generic-symbolic'});
+        setCover(this._cover, track);
     }
 
     destroy() {

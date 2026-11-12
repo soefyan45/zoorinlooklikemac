@@ -94,6 +94,7 @@ ${inViews('.zorin-notch-search-name')} { color: ${text}; }
 ${inViews('.zorin-notch-search-meta')} { color: ${muted}; }
 ${inViews('.zorin-notch-search-entry StLabel.hint-text')} { color: rgba(0, 0, 0, 0.4); }
 ${inViews('.zorin-notch-divider')} { background-color: rgba(0, 0, 0, 0.08); }
+${inViews('.zorin-notch-media-cover')} { background-color: rgba(0, 0, 0, 0.08); color: ${muted}; }
 `;
 }
 

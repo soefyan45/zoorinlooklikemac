@@ -202,6 +202,11 @@ export class Notch {
             lockScreen: () => this._closeThen(() => this._power.run('lock')),
             openPower: () => this.setState(State.POWER),
             openNotifications: () => this.setState(State.LIST),
+            media: {
+                previous: () => this._media.previous(),
+                playPause: () => this._media.playPause(),
+                next: () => this._media.next(),
+            },
         };
 
         // Power runs only after the notch has closed (and released its grab)
@@ -321,6 +326,7 @@ export class Notch {
             view.update({
                 trayVisible: this._tray?.hasVisibleIcons ?? false,
                 unread: this._messages?.unreadCount ?? 0,
+                track: this._currentTrack(),
             });
         } catch (e) {
             console.error(LOG_PREFIX, `${this._state} view update failed`, e);
@@ -362,6 +368,8 @@ export class Notch {
         this._mediaRow.update(this._currentTrack());
         this._syncActivityState();
         this._area?.queue_repaint();
+        if (this._state === State.PANEL)
+            this._syncViews();
         this._mediaRowShown = !!this._currentTrack();
         if (hadRow !== this._mediaRowShown && this._state === State.PEEK) {
             // Hovering while the music starts or stops: swap the rows
