@@ -662,3 +662,82 @@
     background-color: rgba(248, 248, 252, 0.88);
     box-shadow: 0 20px 50px 0 rgba(0, 0, 0, 0.18);
 }
+
+/* Top bar beside the notch (topbar.js): a thin tinted bar, or glass islands like the dock */
+.zorin-notch-topbar {
+    font-family: "Inter", sans-serif;
+    color: #ffffff;
+    padding: 0 14px 0 18px;
+    background-color: rgba(11, 15, 26, 0.48);
+}
+
+.zorin-notch-topbar-right {
+    spacing: 16px;
+}
+
+.zorin-notch-topbar-group {
+    min-height: 32px;
+    padding: 0 4px;
+    border-radius: 6px;
+}
+
+.zorin-notch-topbar-group:hover {
+    background-color: rgba(255, 255, 255, 0.12);
+}
+
+.zorin-notch-topbar-content {
+    spacing: 8px;
+}
+
+.zorin-notch-topbar-icon {
+    icon-size: 16px;
+    color: #ffffff;
+}
+
+.zorin-notch-topbar-app {
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.zorin-notch-topbar-text,
+.zorin-notch-topbar-date {
+    font-size: 13px;
+    font-weight: 500;
+}
+
+.zorin-notch-topbar-time {
+    font-size: 13px;
+    font-weight: 600;
+}
+
+/* Islands: no bar, each group floats in the dock's glass */
+.zorin-notch-topbar.islands {
+    padding: 8px 10px 0 10px;
+    background-color: transparent;
+}
+
+.zorin-notch-topbar.islands .zorin-notch-topbar-right {
+    spacing: 8px;
+}
+
+.zorin-notch-topbar.islands .zorin-notch-topbar-group {
+    min-height: 30px;
+    padding: 0 14px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.28);
+    background-color: rgba(24, 35, 53, 0.6);
+    box-shadow: 0 4px 14px 0 rgba(0, 0, 0, 0.2);
+}
+
+.zorin-notch-topbar.islands .zorin-notch-topbar-group:hover {
+    background-color: rgba(24, 35, 53, 0.78);
+}
+
+.zorin-notch-topbar.islands .zorin-notch-topbar-date {
+    color: rgba(255, 255, 255, 0.85);
+}
+
+.zorin-notch-topbar.islands .zorin-notch-topbar-time {
+    font-weight: 700;
+}
+

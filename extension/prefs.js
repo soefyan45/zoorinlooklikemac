@@ -31,6 +31,13 @@ const AGENT_INDICATORS = [
     ['dots', 'Three pulsing dots'],
 ];
 
+const BAR_MODES = [
+    ['line', 'Thin line'],
+    ['notch-status', 'Status notch'],
+    ['bar', 'Full menu bar'],
+    ['islands', 'Glass islands'],
+];
+
 const NOTCH_STYLES = [
     ['classic', 'Classic line'],
     ['liquid', 'Liquid drop'],
@@ -180,6 +187,8 @@ export default class ZorinNotchPreferences extends ExtensionPreferences {
         notch.add(notchBehavior);
 
         const notchLook = new Adw.PreferencesGroup({title: _('Appearance')});
+        notchLook.add(choiceRow(settings, 'bar-mode', 'Top bar',
+            'What shows at the top while the notch rests', BAR_MODES));
         notchLook.add(choiceRow(settings, 'notch-style', 'Notch style',
             'Liquid: a lens at rest that drops into a bead toward the pointer', NOTCH_STYLES));
         notchLook.add(switchRow(settings, 'notch-floating', 'Floating notch',

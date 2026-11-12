@@ -132,6 +132,16 @@
     </key>
 
     <!-- Notch look -->
+    <key name="bar-mode" type="s">
+      <choices>
+        <choice value="line"/>
+        <choice value="notch-status"/>
+        <choice value="bar"/>
+        <choice value="islands"/>
+      </choices>
+      <default>'line'</default>
+      <summary>What shows at the top while the notch rests: the thin line, the status notch, a full menu bar or glass islands</summary>
+    </key>
     <key name="notch-style" type="s">
       <choices>
         <choice value="classic"/>

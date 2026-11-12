@@ -832,6 +832,63 @@ async function testLiquid(extension, shotDir) {
         Math.round(notch._height.value) === settings.get_int('idle-height'), `${notch._height._damping} ${notch.debugSize}`);
 }
 
+// Bar modes (Pego "Mode bar"): the status notch rests open; the full bar and the glass islands
+// reserve their height at the top, show the app and the status, and open the panel on a click
+async function testBarModes(extension, shotDir) {
+    const notch = extension.notch;
+    const settings = extension.getSettings();
+    const workTop = () => Main.layoutManager.getWorkAreaForMonitor(Main.layoutManager.primaryIndex).y -
+        Main.layoutManager.primaryMonitor.y;
+    notch.freezePointer(true);
+    try {
+        settings.set_string('bar-mode', 'notch-status');
+        await waitSettled(notch);
+        check('status notch rests open', notch.state === State.PEEK, notch.state);
+        notch.setState(State.IDLE);
+        check('status notch stays open when told to rest', notch.state === State.PEEK, notch.state);
+        if (shotDir)
+            await screenshot(`${shotDir}/bar-notch-status.png`);
+
+        settings.set_string('bar-mode', 'bar');
+        await waitSettled(notch);
+        await wait(800);
+        const bar = notch._topBar;
+        check('full bar mode shows the bar and the line', !!bar && bar.actor.visible && notch.state === State.IDLE,
+            `${!!bar} ${notch.state}`);
+        check('the bar reserves its height', workTop() >= 32, `${workTop()}`);
+        check('the bar names the app and the time', !!bar?._appName.text && !!bar?._time.text,
+            `${bar?._appName.text} ${bar?._time.text}`);
+        const parent = notch.actor.get_parent();
+        check('the notch draws over the bar', parent.get_children().indexOf(notch.actor) >
+            parent.get_children().indexOf(bar.actor));
+        if (shotDir)
+            await screenshotFull(`${shotDir}/bar-full.png`);
+
+        settings.set_string('bar-mode', 'islands');
+        await wait(800);
+        check('islands mode keeps one bar, as islands', notch._topBar === bar && bar.actor.has_style_class_name('islands'));
+        check('the islands reserve their height', workTop() >= 44, `${workTop()}`);
+        if (shotDir)
+            await screenshotFull(`${shotDir}/bar-islands.png`);
+
+        // The status island opens the panel
+        bar.actor.get_children()[1].get_children()[0].emit('clicked', 0);
+        await waitSettled(notch);
+        check('the status island opens the panel', notch.state === State.PANEL, notch.state);
+        notch.setState(State.IDLE);
+        await waitSettled(notch);
+
+        settings.set_string('bar-mode', 'line');
+        await wait(800);
+        check('line mode removes the bar', !notch._topBar && workTop() === 0, `${!!notch._topBar} ${workTop()}`);
+    } finally {
+        settings.reset('bar-mode');
+        notch.freezePointer(false);
+        notch.setState(State.IDLE);
+        await waitSettled(notch);
+    }
+}
+
 async function testFloatingAndOverview(extension, shotDir) {
     const settings = extension.getSettings();
     const notch = extension.notch;
@@ -1083,6 +1140,7 @@ export async function runSelfTest(extension) {
         await testLanguage(extension);
         await testTheme(extension, shotDir);
         await testLiquid(extension, shotDir);
+        await testBarModes(extension, shotDir);
         await testFloatingAndOverview(extension, shotDir);
         await testDockSurvivesTaskbarRestart(extension);
 

@@ -19,6 +19,7 @@ import {PowerActions} from './power.js';
 import {TrayBridge} from './tray.js';
 import {AgentTracker} from './agents.js';
 import {MediaWatcher} from './media.js';
+import {BarMode, TopBar} from './topbar.js';
 import {Spotlight} from './spotlight.js';
 import {
     ActivityRow, AgentView, ListView, MediaRow, NotificationView, PanelView, PowerView, StatusRow,
@@ -187,6 +188,36 @@ export class Notch {
         this._relayout();
         this._syncFullscreen();
         this.onThemeChanged();
+        this._syncTopBar();
+    }
+
+    // What shows at the top while the notch rests: the line (or lens), the status notch, a bar
+    // or glass islands (Pego "Mode bar")
+    _barMode() {
+        return this._settings?.get_string('bar-mode') ?? BarMode.LINE;
+    }
+
+    _syncTopBar() {
+        const mode = this._barMode();
+        if (mode !== BarMode.BAR && mode !== BarMode.ISLANDS) {
+            this._topBar?.destroy();
+            this._topBar = null;
+            return;
+        }
+        if (this._topBar) {
+            this._topBar.setMode(mode);
+        } else {
+            this._topBar = new TopBar(mode, {
+                toggleOverview: () => Main.overview.toggle(),
+                openPanel: () => this.setState(State.PANEL),
+                openList: () => this.setState(State.LIST),
+            });
+            this._syncStatus();
+        }
+        // The notch is drawn over the middle of the bar
+        const parent = this.actor.get_parent();
+        if (parent && parent === this._topBar.actor.get_parent())
+            parent.set_child_above_sibling(this.actor, this._topBar.actor);
     }
 
     _buildActors() {
@@ -331,6 +362,7 @@ export class Notch {
         this._panelView.statusRow.update({clock: panelDateText(clock), networkIcon, battery});
         this._wifiView.statusRow.update({clock, networkIcon, battery});
         this._listView.statusRow.update({clock, networkIcon, battery});
+        this._topBar?.update({time: clock, networkIcon, battery});
     }
 
     _syncViews() {
@@ -638,6 +670,10 @@ export class Notch {
         case 'animations':
             this._syncActivityAnimation();
             break;
+        case 'bar-mode':
+            this._syncTopBar();
+            this.setState(State.IDLE);
+            break;
         case 'notch-style':
             this._syncSprings();
             this._syncActivityAnimation();
@@ -679,6 +715,10 @@ export class Notch {
         // While an agent works the notch rests on its activity instead of the idle line
         if (state === State.IDLE && this._activityShown())
             state = State.ACTIVITY;
+        // The status notch rests open: date, time, network and battery (or the music) always show
+        if (this._barMode() === BarMode.NOTCH &&
+            (state === State.IDLE || state === State.HOVER || state === State.ACTIVITY))
+            state = State.PEEK;
         if (state === this._state)
             return;
 
@@ -1100,6 +1140,8 @@ export class Notch {
     }
 
     destroy() {
+        this._topBar?.destroy();
+        this._topBar = null;
         this._holdUnredirect(false);
         this._setModal(false);
         this._clearAutoClose();
