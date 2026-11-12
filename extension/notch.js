@@ -129,6 +129,7 @@ export class Notch {
         this._autoCloseId = 0;
         this._wifiRefreshId = 0;
         this._popupQueue = [];
+        this._hiddenPopups = new WeakSet();
         this._popupId = 0;
 
         this._buildActors();
@@ -212,6 +213,12 @@ export class Notch {
         const notificationActions = {
             activate: notification => this._closeThen(() => notification.activate()),
             runAction: (notification, action) => this._closeThen(() => action.activate()),
+            // Swiped away: the popup goes, the notification stays in the list, and later
+            // updates of it (progress) do not pop it out again
+            hide: notification => {
+                this._hiddenPopups.add(notification);
+                this.setState(State.IDLE);
+            },
             dismiss: notification =>
                 notification.destroy(MessageTray.NotificationDestroyedReason.DISMISSED),
             clearAll: () => this._messages.clearAll(),
@@ -337,6 +344,8 @@ export class Notch {
             return;
         }
         const notification = item;
+        if (this._hiddenPopups.has(notification))
+            return;
         if (this._popupQueue.includes(notification) || this._notificationView.notification === notification)
             return;
         this._popupQueue.push(notification);

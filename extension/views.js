@@ -377,14 +377,43 @@ export class NotificationView {
 
         this.actor = new St.BoxLayout({style_class: 'zorin-notch-notif', reactive: true});
         this.actor.connect('button-release-event', () => {
-            if (this.notification)
+            // A drag also ends with a release; only a click without movement opens it
+            if (this.notification && this.actor.translation_x < 4)
                 this._actions.activate(this.notification);
             return Clutter.EVENT_STOP;
         });
+
+        // Drag the popup to the right to hide it; the notification stays in the list
+        const pan = new Clutter.PanAction({pan_axis: Clutter.PanAxis.X_AXIS});
+        pan.connect('pan', action => {
+            this.drag(action.get_motion_delta(0)[0]);
+            return false;
+        });
+        pan.connect('gesture-end', () => this.release());
+        this.actor.add_action(pan);
+    }
+
+    drag(dx) {
+        this.actor.translation_x = Math.max(0, this.actor.translation_x + dx);
+    }
+
+    // Past the threshold the popup is hidden, else it springs back
+    release() {
+        if (this.notification && this.actor.translation_x > SWIPE_DISMISS_PX) {
+            this._actions.hide(this.notification);
+        } else {
+            this.actor.ease({
+                translation_x: 0,
+                duration: 150,
+                mode: Clutter.AnimationMode.EASE_OUT_QUAD,
+            });
+        }
     }
 
     show(notification) {
         this.notification = notification;
+        this.actor.remove_all_transitions();
+        this.actor.translation_x = 0;
         this.actor.destroy_all_children();
 
         this.actor.add_child(notificationIconBox(notification));

@@ -715,6 +715,23 @@ async function testNotifications(notch, pointer, keyboard, shotDir) {
         await screenshot(`${shotDir}/notification.png`);
         console.log(LOG_PREFIX, `shot notification (size=${notch.debugSize})`);
     }
+
+    // A short drag springs back; a long one hides the popup, the notification stays in the
+    // list, and an update of it does not pop it out again. The pan gesture itself needs a
+    // real pointer, so its handlers are driven directly.
+    notch._notificationView.drag(40);
+    notch._notificationView.release();
+    await wait(1000);
+    check('short swipe springs back', notch.state === State.NOTIFICATION &&
+        notch._notificationView.actor.translation_x === 0, `${notch._notificationView.actor.translation_x}`);
+    notch._notificationView.drag(200);
+    notch._notificationView.release();
+    await wait(500);
+    check('long swipe hides the popup', notch.state !== State.NOTIFICATION, notch.state);
+    check('swiped notification stays in the list', notch._messages.list().includes(popup));
+    notch._queuePopup(popup);
+    await wait(500);
+    check('an update does not bring a hidden popup back', notch.state !== State.NOTIFICATION, notch.state);
     notch.setState(State.IDLE);
     await wait(500);
 
