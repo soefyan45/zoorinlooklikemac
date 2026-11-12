@@ -83,11 +83,28 @@ function roundedRect(cr, x, y, w, h, r) {
  * Agent animation on the standby line.
  *
  * @param {object} activity - {style: 'sweep' | 'swap' | 'dots', phase: seconds,
- *   waiting: bool, workColor, waitColor}
+ *   waiting: bool, workColor, waitColor, music: bool (equalizer bars in waitColor)}
  */
-function drawActivity(cr, x, w, h, scale, {style, phase, waiting, workColor, waitColor}) {
+function drawActivity(cr, x, w, h, scale, {style, phase, waiting, workColor, waitColor, music = false}) {
     const [wr, wg, wb] = parseColor(workColor);
     const [ar, ag, ab] = parseColor(waitColor);
+
+    if (music) {
+        // Music playing: a few bars dancing in the accent color, like an equalizer
+        const [mr, mg, mb] = parseColor(waitColor);
+        const bars = 5;
+        const barWidth = 2 * scale;
+        const gap = 2.2 * scale;
+        const left = x + (w - (bars * barWidth + (bars - 1) * gap)) / 2;
+        for (let i = 0; i < bars; i++) {
+            const level = 0.5 + 0.5 * Math.sin(phase * 2 * Math.PI * (0.9 + 0.17 * i) + i * 1.7);
+            const barHeight = h * (0.25 + 0.5 * level);
+            roundedRect(cr, left + i * (barWidth + gap), (h - barHeight) / 2, barWidth, barHeight, barWidth / 2);
+            cr.setSourceRGBA(mr, mg, mb, 1);
+            cr.fill();
+        }
+        return;
+    }
 
     if (waiting) {
         // Needs the user: the whole line breathes in the accent color

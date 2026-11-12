@@ -95,6 +95,10 @@
       <default>true</default>
       <summary>Spotlight also searches the text inside documents (needs the zorin-notchd daemon)</summary>
     </key>
+    <key name="show-media" type="b">
+      <default>true</default>
+      <summary>Music in the notch: equalizer on the line while a player plays, and its controls on hover</summary>
+    </key>
     <key name="agent-permissions" type="b">
       <default>true</default>
       <summary>Claude Code permission prompts can be answered on the notch (needs the zorin-notchd daemon)</summary>

@@ -18,9 +18,10 @@ import {NotificationSource} from './messages.js';
 import {PowerActions} from './power.js';
 import {TrayBridge} from './tray.js';
 import {AgentTracker} from './agents.js';
+import {MediaWatcher} from './media.js';
 import {Spotlight} from './spotlight.js';
 import {
-    ActivityRow, AgentView, ListView, NotificationView, PanelView, PowerView, StatusRow,
+    ActivityRow, AgentView, ListView, MediaRow, NotificationView, PanelView, PowerView, StatusRow,
     WifiView, panelDateText,
 } from './views.js';
 
@@ -274,6 +275,16 @@ export class Notch {
             layer.visible = false;
             this.actor.add_child(layer);
         }
+        // Music on hover, in place of the clock row
+        this._mediaRow = new MediaRow({
+            previous: () => this._media.previous(),
+            playPause: () => this._media.playPause(),
+            next: () => this._media.next(),
+        });
+        this._mediaRow.actor.opacity = 0;
+        this._mediaRow.actor.visible = false;
+        this.actor.add_child(this._mediaRow.actor);
+        this._media = new MediaWatcher(() => this._onMediaChanged());
     }
 
     _buildSources() {
@@ -321,10 +332,44 @@ export class Notch {
         if (!this._activityRow)
             return;
         this._activityRow.update(this._agents.active);
-        if (this._state === State.IDLE && this._agentsShown())
+        this._syncActivityState();
+    }
+
+    // Something animates the standby line: an agent at work, or music playing
+    _syncActivityState() {
+        if (this._state === State.IDLE && this._activityShown())
             this.setState(State.ACTIVITY);
-        else if (this._state === State.ACTIVITY && !this._agentsShown())
+        else if (this._state === State.ACTIVITY && !this._activityShown())
             this.setState(State.IDLE);
+        else if (this._state === State.ACTIVITY) {
+            // The line is slimmer for the agent's sweep than for music or dots
+            const [w, h] = this._sizeOf(State.ACTIVITY);
+            this._width.target = w;
+            this._height.target = h;
+            this._wake();
+        }
+    }
+
+    // The music row replaces the clock row while a player is there and the setting is on
+    _currentTrack() {
+        return (this._settings?.get_boolean('show-media') ?? true) ? this._media?.current ?? null : null;
+    }
+
+    _onMediaChanged() {
+        if (!this._mediaRow)
+            return;
+        const hadRow = this._mediaRowShown;
+        this._mediaRow.update(this._currentTrack());
+        this._syncActivityState();
+        this._area?.queue_repaint();
+        this._mediaRowShown = !!this._currentTrack();
+        if (hadRow !== this._mediaRowShown && this._state === State.PEEK) {
+            // Hovering while the music starts or stops: swap the rows
+            for (const row of [this._statusRow.actor, this._mediaRow.actor])
+                row.opacity = 0;
+            this._syncLayers(State.IDLE);
+            this._syncRowVisibility();
+        }
     }
 
     _onMessagesChanged() {
@@ -433,8 +478,9 @@ export class Notch {
         case State.NOTIFICATION:
             return [settings.get_int('notification-width'), StateSize.notification[1]];
         case State.ACTIVITY: {
-            // An agent at work only animates the standby line; dots need a slim pill
-            const dots = ['swap', 'dots'].includes(settings.get_string('agent-indicator'));
+            // An agent at work only animates the standby line; dots and music need a slim pill
+            const dots = !this._agentsShown() ||
+                ['swap', 'dots'].includes(settings.get_string('agent-indicator'));
             return dots ? [Math.max(idle[0], DOTS_LINE[0]), Math.max(idle[1], DOTS_LINE[1])] : idle;
         }
         default:
@@ -515,6 +561,14 @@ export class Notch {
         return (this._settings?.get_boolean('show-agents') ?? true) && !!this._agents?.hasActive;
     }
 
+    _musicPlaying() {
+        return !!this._currentTrack()?.playing;
+    }
+
+    _activityShown() {
+        return this._agentsShown() || this._musicPlaying();
+    }
+
     _onSettingsChanged(key) {
         switch (key) {
         case 'idle-width':
@@ -528,6 +582,9 @@ export class Notch {
         }
         case 'show-agents':
             this._onAgentsChanged();
+            break;
+        case 'show-media':
+            this._onMediaChanged();
             break;
         case 'panel-opacity':
             this._area.queue_repaint();
@@ -563,7 +620,7 @@ export class Notch {
 
     setState(state) {
         // While an agent works the notch rests on its activity instead of the idle line
-        if (state === State.IDLE && this._agentsShown())
+        if (state === State.IDLE && this._activityShown())
             state = State.ACTIVITY;
         if (state === this._state)
             return;
@@ -767,7 +824,7 @@ export class Notch {
 
         const dx = Math.abs(px - (monitor.x + monitor.width / 2));
         const dy = py - monitor.y;
-        if (this._agentsShown()) {
+        if (this._activityShown()) {
             this.setState(State.ACTIVITY);
             return;
         }
@@ -824,6 +881,8 @@ export class Notch {
     }
 
     _layerFor(state) {
+        if (state === State.PEEK && this._currentTrack())
+            return this._mediaRow.actor;
         return this._layers[state];
     }
 
@@ -831,13 +890,15 @@ export class Notch {
     _syncRowVisibility() {
         const tall = this._height.value >= CONTENT_MIN_HEIGHT;
         this._activityRow.actor.visible = false;
-        this._statusRow.actor.visible = tall &&
+        const music = this._state === State.PEEK && !!this._currentTrack();
+        this._mediaRow.actor.visible = tall && music;
+        this._statusRow.actor.visible = tall && !music &&
             (this._state === State.STATUS || this._state === State.PEEK);
     }
 
     _syncLayers(previous) {
         if (previous === State.PEEK) {
-            for (const row of [this._statusRow.actor, this._activityRow.actor]) {
+            for (const row of [this._statusRow.actor, this._activityRow.actor, this._mediaRow.actor]) {
                 row.remove_all_transitions();
                 row.opacity = 0;
                 row.visible = false;
@@ -897,7 +958,7 @@ export class Notch {
         this._area.set_size(width, height);
 
         const rowWidth = Math.round((StateSize.status[0] - 2 * STATUS_ROW_INSET) * scale);
-        for (const row of [this._statusRow.actor, this._activityRow.actor]) {
+        for (const row of [this._statusRow.actor, this._activityRow.actor, this._mediaRow.actor]) {
             row.set_size(rowWidth, Math.round(STATUS_ROW_HEIGHT * scale));
             row.set_position(Math.round((width - rowWidth) / 2), 0);
         }
@@ -937,6 +998,7 @@ export class Notch {
                     waiting: this._agents?.active[0]?.status === 'waiting',
                     workColor: this._agentColor(),
                     waitColor: this._theme?.accent.color ?? Color.accent,
+                    music: !this._agentsShown(),
                 } : null,
                 unreadDot: (this._messages?.unreadCount ?? 0) > 0,
             });
@@ -1012,6 +1074,8 @@ export class Notch {
         this._powerView.destroy();
         this._spotlight.destroy();
         this._agents.destroy();
+        this._media.destroy();
+        this._mediaRow.destroy();
         this._activityRow.destroy();
         this._agentView.destroy();
         this._clock = this._battery = this._network = this._bridge = this._messages = null;

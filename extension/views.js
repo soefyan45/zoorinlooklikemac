@@ -669,6 +669,65 @@ export class ActivityRow {
 }
 
 /**
+ * Music under the pointer on the standby line (hover): cover, title and artist left,
+ * previous / play-pause / next right. Takes the place of the clock row while a player is there.
+ * actions: {previous(), playPause(), next()}
+ */
+export class MediaRow {
+    constructor(actions) {
+        this.actor = new St.BoxLayout({style_class: 'zorin-notch-status zorin-notch-media', x_expand: true});
+        this._cover = new St.Icon({style_class: 'zorin-notch-media-cover', icon_size: 20});
+
+        const text = new St.BoxLayout({vertical: true, x_expand: true, y_align: Clutter.ActorAlign.CENTER});
+        this._title = label('', 'zorin-notch-media-title');
+        this._artist = label('', 'zorin-notch-media-artist');
+        text.add_child(this._title);
+        text.add_child(this._artist);
+
+        const button = (iconName, name, onClick) => {
+            const b = new St.Button({
+                style_class: 'zorin-notch-media-button',
+                child: icon(iconName, 'zorin-notch-media-icon'),
+                accessible_name: name,
+                can_focus: false,
+                y_align: Clutter.ActorAlign.CENTER,
+            });
+            b.connect('clicked', onClick);
+            return b;
+        };
+        this._playIcon = icon('media-playback-pause-symbolic', 'zorin-notch-media-icon');
+        this.playButton = button('media-playback-pause-symbolic', _('Play or pause'), () => actions.playPause());
+        this.playButton.child = this._playIcon;
+        this.previousButton = button('media-skip-backward-symbolic', _('Previous'), () => actions.previous());
+        this.nextButton = button('media-skip-forward-symbolic', _('Next'), () => actions.next());
+
+        this.actor.add_child(this._cover);
+        this.actor.add_child(text);
+        this.actor.add_child(this.previousButton);
+        this.actor.add_child(this.playButton);
+        this.actor.add_child(this.nextButton);
+    }
+
+    update(track) {
+        if (!track)
+            return;
+        this._title.text = track.title || _('Unknown title');
+        this._artist.text = track.artist;
+        this._artist.visible = !!track.artist;
+        this._playIcon.icon_name = track.playing ? 'media-playback-pause-symbolic' : 'media-playback-start-symbolic';
+        // Cover from a local file; a player that only gives a web address keeps the note icon
+        const local = track.artUrl.startsWith('file://');
+        this._cover.gicon = local
+            ? new Gio.FileIcon({file: Gio.File.new_for_uri(track.artUrl)})
+            : new Gio.ThemedIcon({name: 'audio-x-generic-symbolic'});
+    }
+
+    destroy() {
+        this.actor.destroy();
+    }
+}
+
+/**
  * Agent popup (state 08): teal badge with the agent, project and time, what happened,
  * and Buka (focus its window) / Abaikan.
  * actions: {open(entry), dismiss()}

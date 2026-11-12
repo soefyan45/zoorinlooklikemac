@@ -411,6 +411,95 @@ async function testPermissions(extension, notch, shotDir) {
     }
 }
 
+// Music: a fake MPRIS player on the bus. The line dances while it plays, hovering shows its
+// title and controls, pausing lets the line rest, and the setting turns it all off.
+const FAKE_PLAYER_XML = `<node><interface name="org.mpris.MediaPlayer2.Player">
+<method name="PlayPause"/><method name="Next"/><method name="Previous"/>
+<property name="PlaybackStatus" type="s" access="read"/>
+<property name="Metadata" type="a{sv}" access="read"/>
+</interface></node>`;
+
+async function testMedia(extension, notch, shotDir) {
+    const settings = extension.getSettings();
+    const state = {status: 'Playing'};
+    const calls = [];
+    const exported = Gio.DBusExportedObject.wrapJSObject(FAKE_PLAYER_XML, {
+        get PlaybackStatus() {
+            return state.status;
+        },
+        get Metadata() {
+            return new GLib.Variant('a{sv}', {
+                'xesam:title': new GLib.Variant('s', 'Jalan Braga'),
+                'xesam:artist': new GLib.Variant('as', ['Kolektif Senja']),
+            });
+        },
+        PlayPause() {
+            calls.push('PlayPause');
+        },
+        Next() {
+            calls.push('Next');
+        },
+        Previous() {
+            calls.push('Previous');
+        },
+    });
+    exported.export(Gio.DBus.session, '/org/mpris/MediaPlayer2');
+    const owner = Gio.bus_own_name_on_connection(Gio.DBus.session, 'org.mpris.MediaPlayer2.zorintest',
+        Gio.BusNameOwnerFlags.NONE, null, null);
+    notch.freezePointer(true);
+    try {
+        notch.setState(State.IDLE);
+        await wait(2000);
+        const track = notch._media.current;
+        check('media watcher finds the player', track?.title === 'Jalan Braga' &&
+            track.artist === 'Kolektif Senja' && track.playing, JSON.stringify(track));
+        check('music playing animates the line', notch.state === State.ACTIVITY, notch.state);
+        check('the line makes room for the bars', notch._height.target >= 8, `${notch._height.target}`);
+        if (shotDir)
+            await screenshot(`${shotDir}/media-line.png`);
+
+        notch.setState(State.PEEK);
+        await wait(SETTLE_MS);
+        check('hover shows the music row instead of the clock', notch._mediaRow.actor.visible &&
+            !notch._statusRow.actor.visible, `${notch._mediaRow.actor.visible} ${notch._statusRow.actor.visible}`);
+        if (shotDir)
+            await screenshot(`${shotDir}/media-peek.png`);
+        notch._mediaRow.playButton.emit('clicked', 0);
+        notch._mediaRow.nextButton.emit('clicked', 0);
+        notch._mediaRow.previousButton.emit('clicked', 0);
+        await wait(500);
+        check('the buttons reach the player', calls.join() === 'PlayPause,Next,Previous', calls.join());
+
+        state.status = 'Paused';
+        exported.emit_property_changed('PlaybackStatus', new GLib.Variant('s', 'Paused'));
+        notch.setState(State.IDLE);
+        await wait(1000);
+        check('paused: the line rests', notch.state === State.IDLE, notch.state);
+        check('paused: the player is still offered', notch._media.current && !notch._media.current.playing);
+
+        state.status = 'Playing';
+        exported.emit_property_changed('PlaybackStatus', new GLib.Variant('s', 'Playing'));
+        await wait(1000);
+        check('playing again: the line dances', notch.state === State.ACTIVITY, notch.state);
+
+        settings.set_boolean('show-media', false);
+        await wait(1000);
+        check('setting off: the line rests', notch.state === State.IDLE, notch.state);
+        settings.reset('show-media');
+        await wait(500);
+
+        Gio.bus_unown_name(owner);
+        exported.unexport();
+        await wait(1000);
+        check('player gone: nothing is shown', !notch._media.current && notch.state === State.IDLE, notch.state);
+    } finally {
+        notch.freezePointer(false);
+        settings.reset('show-media');
+        notch.setState(State.IDLE);
+        await wait(500);
+    }
+}
+
 // Coding agents: the D-Bus service, the activity row (04) and the agent popup (08). The real
 // Claude Code hook script is run too, against the nested session bus.
 function callAgentEvent(...args) {
@@ -887,6 +976,7 @@ export async function runSelfTest(extension) {
         notch.setState(State.IDLE);
         await wait(500);
         await testFileSearch(extension, notch, shotDir);
+        await testMedia(extension, notch, shotDir);
         await testDockZoom(extension, shotDir);
         await testAgents(notch, shotDir);
         await testPermissions(extension, notch, shotDir);

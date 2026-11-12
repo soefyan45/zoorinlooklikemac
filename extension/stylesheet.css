@@ -485,6 +485,43 @@
     color: rgba(255, 255, 255, 0.6);
 }
 
+/* Music on hover: cover, title and artist, controls */
+.zorin-notch-media {
+    spacing: 8px;
+}
+
+.zorin-notch-media-cover {
+    width: 20px;
+    height: 20px;
+    border-radius: 5px;
+    background-color: rgba(255, 255, 255, 0.12);
+    color: rgba(255, 255, 255, 0.7);
+}
+
+.zorin-notch-media-title {
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.zorin-notch-media-artist {
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.6);
+}
+
+.zorin-notch-media-button {
+    padding: 4px;
+    border-radius: 999px;
+}
+
+.zorin-notch-media-button:hover {
+    background-color: rgba(255, 255, 255, 0.16);
+}
+
+.zorin-notch-media-icon {
+    icon-size: 14px;
+    color: #ffffff;
+}
+
 /* Coding agents: activity row (state 04) and agent popup (state 08).
    ai #4FD1C5, on-ai #06201D, accent #F05A24 */
 .zorin-notch-activity-left {
