@@ -830,6 +830,8 @@ async function testNotifications(notch, pointer, keyboard, shotDir) {
     // list, and an update of it does not pop it out again. The pan gesture itself needs a
     // real pointer, so its handlers are driven directly.
     notch._notificationView.drag(40);
+    const fading = notch._notificationView.actor.opacity;
+    check('popup fades while dragged', fading < 255 && fading > 100, `${fading}`);
     notch._notificationView.release();
     await wait(1000);
     check('short swipe springs back', notch.state === State.NOTIFICATION &&
@@ -842,6 +844,22 @@ async function testNotifications(notch, pointer, keyboard, shotDir) {
     notch._queuePopup(popup);
     await wait(500);
     check('an update does not bring a hidden popup back', notch.state !== State.NOTIFICATION, notch.state);
+
+    // The × button does the same as the swipe
+    const another = sendNotification('Unduhan selesai', 'laporan-q3.pdf');
+    for (let i = 0; i < 16 && notch.state !== State.NOTIFICATION; i++)
+        await wait(250);
+    await wait(500);
+    check('a new popup shows', notch.state === State.NOTIFICATION, notch.state);
+    if (shotDir)
+        await screenshot(`${shotDir}/notification-hide-button.png`);
+    notch._notificationView.hideButton.emit('clicked', 0);
+    await wait(100);
+    check('the hide button draws the popup up', notch._notificationView.actor.translation_y < 0 &&
+        notch._notificationView.actor.translation_x === 0, `${notch._notificationView.actor.translation_y}`);
+    await wait(700);
+    check('the hide button hides the popup', notch.state !== State.NOTIFICATION, notch.state);
+    check('the hidden notification stays in the list', notch._messages.list().includes(another));
     notch.setState(State.IDLE);
     await wait(500);
 

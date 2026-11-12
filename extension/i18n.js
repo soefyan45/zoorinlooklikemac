@@ -50,6 +50,7 @@ const STRINGS = {
         'Finished': 'Selesai',
         'Dismiss': 'Abaikan',
         'Allow': 'Izinkan',
+        'Hide': 'Sembunyikan',
         'Play or pause': 'Putar atau jeda',
         'Previous': 'Sebelumnya',
         'Next': 'Berikutnya',

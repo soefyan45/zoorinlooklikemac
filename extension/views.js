@@ -17,7 +17,104 @@ import {relativeTime} from './messages.js';
 const MAX_OTHER_NETWORKS = 3;
 const MAX_LIST_ROWS = 4;
 // Horizontal drag past this distance dismisses a notification row (Pego 07: "geser kanan")
-const SWIPE_DISMISS_PX = 120;
+const SWIPE_DISMISS_PX = 100;
+// The popup in the notch is smaller: a shorter drag is enough
+const POPUP_SWIPE_PX = 80;
+// A quick flick dismisses from a short distance
+const FLICK_PX_PER_MS = 0.5;
+// The pointer must move this far before a press turns into a drag
+const DRAG_START_PX = 4;
+
+/**
+ * Drag an actor to the right to dismiss it. It follows the pointer one to one from where the
+ * press landed (no jump when the drag starts), fades as it goes, and slides out when dragged
+ * far enough or flicked; otherwise it springs back. Pulling left meets resistance.
+ * Returns {drag(offset), release(velocity), dismiss(), reset()}; the pointer handling calls the same.
+ */
+function makeSwipeable(actor, {threshold, onDismiss}) {
+    const swipe = {
+        drag(offset) {
+            const x = offset >= 0 ? offset : offset * 0.2;
+            actor.translation_x = x;
+            actor.opacity = Math.round(255 * Math.max(0.25, 1 - Math.max(0, x) / (2.2 * threshold)));
+        },
+
+        release(velocity = 0) {
+            const x = actor.translation_x;
+            if (x > threshold || (velocity > FLICK_PX_PER_MS && x > threshold / 3)) {
+                swipe.dismiss();
+            } else {
+                actor.ease({
+                    translation_x: 0,
+                    opacity: 255,
+                    duration: 200,
+                    mode: Clutter.AnimationMode.EASE_OUT_CUBIC,
+                });
+            }
+        },
+
+        // Slide out to the right, then dismiss (also for a button doing the same as the swipe)
+        dismiss() {
+            actor.remove_all_transitions();
+            actor.ease({
+                translation_x: Math.max(actor.width, actor.translation_x),
+                opacity: 0,
+                duration: 170,
+                mode: Clutter.AnimationMode.EASE_OUT_QUAD,
+                onComplete: () => onDismiss(),
+            });
+        },
+
+        // Back in place, for the next time the actor is shown (its opacity belongs to its owner)
+        reset() {
+            actor.remove_all_transitions();
+            actor.translation_x = 0;
+        },
+    };
+
+    let start = null;
+    const onStageEvent = event => {
+        const type = event.type();
+        if (type === Clutter.EventType.MOTION) {
+            const [x] = event.get_coords();
+            const time = event.get_time();
+            const dx = x - start.x;
+            if (!start.dragging && Math.abs(dx) < DRAG_START_PX)
+                return Clutter.EVENT_PROPAGATE;
+            start.dragging = true;
+            if (time > start.time)
+                start.velocity = 0.6 * start.velocity + 0.4 * (x - start.lastX) / (time - start.time);
+            start.lastX = x;
+            start.time = time;
+            swipe.drag(dx - Math.sign(dx) * DRAG_START_PX);
+            return Clutter.EVENT_STOP;
+        }
+        if (type === Clutter.EventType.BUTTON_RELEASE) {
+            const {dragging, velocity} = start;
+            start = null;
+            global.stage.disconnectObject(actor);
+            if (!dragging)
+                return Clutter.EVENT_PROPAGATE;
+            // The press never gets its release: a button must not stay pressed
+            actor.fake_release?.();
+            swipe.release(velocity);
+            return Clutter.EVENT_STOP;
+        }
+        return Clutter.EVENT_PROPAGATE;
+    };
+
+    actor.connect('button-press-event', (_actor, event) => {
+        if (event.get_button() !== Clutter.BUTTON_PRIMARY)
+            return Clutter.EVENT_PROPAGATE;
+        const [x] = event.get_coords();
+        swipe.reset();
+        actor.opacity = 255;
+        start = {x, lastX: x, time: event.get_time(), velocity: 0, dragging: false};
+        global.stage.connectObject('captured-event', (_stage, e) => onStageEvent(e), actor);
+        return Clutter.EVENT_PROPAGATE;
+    });
+    return swipe;
+}
 
 function notificationIcon(notification) {
     const gicon = notification.gicon ?? notification.source?.icon ?? null;
@@ -442,36 +539,50 @@ export class NotificationView {
         });
 
         // Drag the popup to the right to hide it; the notification stays in the list
-        const pan = new Clutter.PanAction({pan_axis: Clutter.PanAxis.X_AXIS});
-        pan.connect('pan', action => {
-            this.drag(action.get_motion_delta(0)[0]);
-            return false;
+        this._swipe = makeSwipeable(this.actor, {
+            threshold: POPUP_SWIPE_PX,
+            onDismiss: () => {
+                if (this.notification)
+                    this._actions.hide(this.notification);
+            },
         });
-        pan.connect('gesture-end', () => this.release());
-        this.actor.add_action(pan);
     }
 
-    drag(dx) {
-        this.actor.translation_x = Math.max(0, this.actor.translation_x + dx);
+    // The swipe, driven by hand in the self test
+    drag(offset) {
+        this._swipe.drag(offset);
     }
 
-    // Past the threshold the popup is hidden, else it springs back
-    release() {
-        if (this.notification && this.actor.translation_x > SWIPE_DISMISS_PX) {
-            this._actions.hide(this.notification);
-        } else {
-            this.actor.ease({
-                translation_x: 0,
-                duration: 150,
-                mode: Clutter.AnimationMode.EASE_OUT_QUAD,
-            });
-        }
+    release(velocity = 0) {
+        this._swipe.release(velocity);
+    }
+
+    // Up, smaller and fading, as if the notch swallowed it; the notch closes after
+    _hideUp() {
+        const notification = this.notification;
+        if (!notification)
+            return;
+        this.actor.remove_all_transitions();
+        this.actor.set_pivot_point(0.5, 0);
+        this.actor.ease({
+            translation_y: -Math.round(this.actor.height * 0.6),
+            scale_x: 0.9,
+            scale_y: 0.9,
+            opacity: 0,
+            duration: 200,
+            mode: Clutter.AnimationMode.EASE_IN_CUBIC,
+            onComplete: () => {
+                if (this.notification === notification)
+                    this._actions.hide(notification);
+            },
+        });
     }
 
     show(notification) {
         this.notification = notification;
-        this.actor.remove_all_transitions();
-        this.actor.translation_x = 0;
+        this._swipe.reset();
+        this.actor.translation_y = 0;
+        this.actor.scale_x = this.actor.scale_y = 1;
         this.actor.destroy_all_children();
 
         this.actor.add_child(notificationIconBox(notification));
@@ -502,6 +613,12 @@ export class NotificationView {
                 this._actions.activate(notification);
         });
         this.actor.add_child(button);
+
+        // Same as the swipe, but the popup is drawn back up into the notch
+        this.hideButton = roundButton('window-close-symbolic', _('Hide'), () => this._hideUp());
+        this.hideButton.add_style_class_name('small');
+        this.hideButton.y_align = Clutter.ActorAlign.CENTER;
+        this.actor.add_child(this.hideButton);
     }
 
     clear() {
@@ -539,26 +656,7 @@ function notificationRow(notification, actions) {
             actions.activate(notification);
     });
 
-    const pan = new Clutter.PanAction({pan_axis: Clutter.PanAxis.X_AXIS});
-    pan.connect('pan', action => {
-        const [dx] = action.get_motion_delta(0);
-        button.translation_x = Math.max(0, button.translation_x + dx);
-        button.opacity = 255 * Math.max(0.2, 1 - button.translation_x / (2 * SWIPE_DISMISS_PX));
-        return false;
-    });
-    pan.connect('gesture-end', () => {
-        if (button.translation_x > SWIPE_DISMISS_PX) {
-            actions.dismiss(notification);
-        } else {
-            button.ease({
-                translation_x: 0,
-                opacity: 255,
-                duration: 150,
-                mode: Clutter.AnimationMode.EASE_OUT_QUAD,
-            });
-        }
-    });
-    button.add_action(pan);
+    makeSwipeable(button, {threshold: SWIPE_DISMISS_PX, onDismiss: () => actions.dismiss(notification)});
     return button;
 }
 
