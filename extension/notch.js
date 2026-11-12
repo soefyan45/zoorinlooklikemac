@@ -57,6 +57,18 @@ const INTERRUPTIBLE = new Set([State.IDLE, State.HOVER, State.PEEK, State.STATUS
 // "drops" while it widens
 const WIDTH_SPRING = {stiffness: 260, damping: 30};
 const HEIGHT_SPRING = {stiffness: 340, damping: 34};
+// Liquid style (notching's motion.ts at its default speed and bounce): the lens and the bead
+// wobble like jelly, the notch and its panels spring out with a small overshoot
+const LIQUID_DROP_WIDTH = {stiffness: 440, damping: 10.4};
+const LIQUID_DROP_HEIGHT = {stiffness: 320, damping: 4.8};
+const LIQUID_PANEL_WIDTH = {stiffness: 680, damping: 37};
+const LIQUID_PANEL_HEIGHT = {stiffness: 600, damping: 35};
+// The bead: this much deeper than the lens, a bit narrower, leaning at most this far toward
+// the pointer
+const LIQUID_DROP = 9;
+const LIQUID_DROP_NARROW = 0.87;
+const LIQUID_LEAN = {gain: 0.08, max: 6};
+const LIQUID_STATES = new Set(['idle', 'hover', 'activity']);
 
 const POINTER_POLL_MS = 50;
 // Minimum size of the standby line while agent dots light up inside it
@@ -90,6 +102,11 @@ class Spring {
         this.value = value;
         this.target = value;
         this.velocity = 0;
+        this._stiffness = stiffness;
+        this._damping = damping;
+    }
+
+    setConstants({stiffness, damping}) {
         this._stiffness = stiffness;
         this._damping = damping;
     }
@@ -146,8 +163,12 @@ export class Notch {
         this._activityTimeline = new Clutter.Timeline({actor: this.actor, duration: 1000, repeat_count: -1});
         this._activityTimeline.connect('new-frame', () => {
             this._activityPhase += Math.min(this._activityTimeline.get_delta(), 50) / 1000;
+            // The liquid bead follows the pointer smoothly
+            this._lean += (this._leanTarget - this._lean) * 0.2;
             this._area.queue_repaint();
         });
+        this._lean = 0;
+        this._leanTarget = 0;
 
         this._ticker = new Clutter.Timeline({actor: this.actor, duration: 1000, repeat_count: -1});
         this._ticker.connect('new-frame', () => this._tick(Math.min(this._ticker.get_delta(), 50) / 1000));
@@ -482,6 +503,8 @@ export class Notch {
         case State.IDLE:
             return idle;
         case State.HOVER:
+            if (this._liquid())
+                return [Math.round(idle[0] * LIQUID_DROP_NARROW), idle[1] + LIQUID_DROP];
             return [idle[0] + HOVER_GROW[0], idle[1] + HOVER_GROW[1]];
         case State.NOTIFICATION:
             return [settings.get_int('notification-width'), StateSize.notification[1]];
@@ -564,6 +587,21 @@ export class Notch {
         return this._settings ? this._settings.get_int(key) * 1000 : fallbackMs;
     }
 
+    // Liquid notch style (Pego "Notch liquid"); the floating notch keeps its pill
+    _liquid() {
+        return this._settings?.get_string('notch-style') === 'liquid' &&
+            !(this._settings?.get_boolean('notch-floating') ?? false);
+    }
+
+    // Springs of the style: jelly between the lens and the bead, firmer for the notch and
+    // its panels, and for closing one back into the lens (a jelly spring would wobble wildly)
+    _syncSprings(previous = this._state) {
+        const liquid = this._liquid();
+        const drop = LIQUID_STATES.has(this._state) && LIQUID_STATES.has(previous);
+        this._width.setConstants(liquid ? (drop ? LIQUID_DROP_WIDTH : LIQUID_PANEL_WIDTH) : WIDTH_SPRING);
+        this._height.setConstants(liquid ? (drop ? LIQUID_DROP_HEIGHT : LIQUID_PANEL_HEIGHT) : HEIGHT_SPRING);
+    }
+
     // Coding agents shown only when enabled in the preferences
     _agentsShown() {
         return (this._settings?.get_boolean('show-agents') ?? true) && !!this._agents?.hasActive;
@@ -600,6 +638,10 @@ export class Notch {
         case 'animations':
             this._syncActivityAnimation();
             break;
+        case 'notch-style':
+            this._syncSprings();
+            this._syncActivityAnimation();
+            // falls through: the sizes change too
         case 'agent-indicator':
         case 'agent-color': {
             const [w, h] = this._sizeOf(this._state);
@@ -610,10 +652,17 @@ export class Notch {
             break;
         }
         case 'notch-floating':
-        case 'notch-float-offset':
+        case 'notch-float-offset': {
+            // The floating notch keeps its pill, so it changes the liquid style's shape too
+            this._syncSprings();
+            const [w, h] = this._sizeOf(this._state);
+            this._width.target = w;
+            this._height.target = h;
+            this._wake();
             this._relayout();
             this._area.queue_repaint();
             break;
+        }
         }
     }
 
@@ -636,6 +685,7 @@ export class Notch {
         const previous = this._state;
         trace(`state ${previous} -> ${state}`);
         this._state = state;
+        this._syncSprings(previous);
         const [w, h] = this._sizeOf(state);
         this._width.target = w;
         this._height.target = h;
@@ -830,7 +880,10 @@ export class Notch {
             return;
         }
 
-        const dx = Math.abs(px - (monitor.x + monitor.width / 2));
+        const center = monitor.x + monitor.width / 2;
+        this._leanTarget = Math.max(-LIQUID_LEAN.max,
+            Math.min(LIQUID_LEAN.max, (px - center) / scale * LIQUID_LEAN.gain));
+        const dx = Math.abs(px - center);
         const dy = py - monitor.y;
         if (this._activityShown()) {
             this.setState(State.ACTIVITY);
@@ -880,7 +933,8 @@ export class Notch {
     _syncActivityAnimation() {
         if (!this._activityTimeline)
             return;
-        const run = this._state === State.ACTIVITY && St.Settings.get().enable_animations &&
+        const breathing = this._state === State.HOVER && this._liquid();
+        const run = (this._state === State.ACTIVITY || breathing) && St.Settings.get().enable_animations &&
             (this._settings?.get_boolean('animations') ?? true);
         if (run && !this._activityTimeline.is_playing())
             this._activityTimeline.start();
@@ -1009,6 +1063,12 @@ export class Notch {
                     music: !this._agentsShown(),
                 } : null,
                 unreadDot: (this._messages?.unreadCount ?? 0) > 0,
+                liquid: this._liquid() ? {
+                    rest: (this._settings?.get_int('idle-height') ?? StateSize.idle[1]) * scale,
+                    drop: LIQUID_DROP * scale,
+                    lean: this._lean * scale,
+                    phase: this._activityPhase,
+                } : null,
             });
         } catch (e) {
             console.error(LOG_PREFIX, 'repaint failed', e);

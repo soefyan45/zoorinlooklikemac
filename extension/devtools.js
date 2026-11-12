@@ -475,7 +475,8 @@ async function testMedia(extension, notch, shotDir) {
         await wait(500);
 
         notch.setState(State.PEEK);
-        await wait(SETTLE_MS);
+        await waitSettled(notch);
+        await wait(1000);
         check('hover shows the music row instead of the clock', notch._mediaRow.actor.visible &&
             !notch._statusRow.actor.visible, `${notch._mediaRow.actor.visible} ${notch._statusRow.actor.visible}`);
         if (shotDir)
@@ -772,6 +773,65 @@ async function testTheme(extension, shotDir) {
 }
 
 // Floating notch, and typing in the overview opening the notch search
+// Liquid notch style: a lens at rest, a bead (deeper, narrower, jelly springs) when the pointer
+// is near, firmer springs for the notch and the panel, back to the classic line when off
+// Springs settle in a second on a smooth desktop; a slow nested session needs longer
+async function waitSettled(notch, maxMs = 8000) {
+    await wait(300);
+    for (let waited = 300; waited < maxMs && !(notch._width.settled && notch._height.settled); waited += 200)
+        await wait(200);
+}
+
+async function testLiquid(extension, shotDir) {
+    // The language test rebuilt the notch: take the current one
+    const notch = extension.notch;
+    const settings = extension.getSettings();
+    notch.freezePointer(true);
+    try {
+        settings.set_string('notch-style', 'liquid');
+        notch.setState(State.IDLE);
+        await waitSettled(notch);
+        check('liquid lens rests at the line size', Math.round(notch._height.value) === settings.get_int('idle-height'),
+            notch.debugSize);
+        if (shotDir)
+            await screenshot(`${shotDir}/liquid-idle.png`);
+
+        notch._leanTarget = 6;
+        notch.setState(State.HOVER);
+        await waitSettled(notch);
+        const [hoverW, hoverH] = notch._sizeOf(State.HOVER);
+        check('pointer near: the lens drops into a bead', hoverH === settings.get_int('idle-height') + 9 &&
+            hoverW < settings.get_int('idle-width') && Math.abs(notch._height.value - hoverH) < 1.5, notch.debugSize);
+        check('the bead has jelly springs', notch._height._damping < 10, `${notch._height._damping}`);
+        check('the bead breathes and leans', notch._activityTimeline.is_playing() && notch._lean > 1,
+            `${notch._activityTimeline.is_playing()} ${notch._lean.toFixed(2)}`);
+        if (shotDir)
+            await screenshot(`${shotDir}/liquid-hover.png`);
+
+        notch.setState(State.PEEK);
+        await wait(SETTLE_MS);
+        check('the notch has firmer springs', notch._height._damping > 30, `${notch._height._damping}`);
+        if (shotDir)
+            await screenshot(`${shotDir}/liquid-peek.png`);
+        notch.setState(State.PANEL);
+        await waitSettled(notch);
+        await wait(1000);
+        check('liquid panel shows its content', notch._panelView.actor.visible && notch._panelView.actor.opacity === 255,
+            `${notch._panelView.actor.visible} ${notch._panelView.actor.opacity}`);
+        if (shotDir)
+            await screenshot(`${shotDir}/liquid-panel.png`);
+        notch.setState(State.IDLE);
+        await wait(500);
+    } finally {
+        settings.reset('notch-style');
+        notch.freezePointer(false);
+        notch.setState(State.IDLE);
+        await waitSettled(notch);
+    }
+    check('classic style is back after the reset', notch._height._damping === 34 &&
+        Math.round(notch._height.value) === settings.get_int('idle-height'), `${notch._height._damping} ${notch.debugSize}`);
+}
+
 async function testFloatingAndOverview(extension, shotDir) {
     const settings = extension.getSettings();
     const notch = extension.notch;
@@ -1022,6 +1082,7 @@ export async function runSelfTest(extension) {
         await testSettings(extension, notch);
         await testLanguage(extension);
         await testTheme(extension, shotDir);
+        await testLiquid(extension, shotDir);
         await testFloatingAndOverview(extension, shotDir);
         await testDockSurvivesTaskbarRestart(extension);
 

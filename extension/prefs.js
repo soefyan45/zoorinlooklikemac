@@ -31,6 +31,11 @@ const AGENT_INDICATORS = [
     ['dots', 'Three pulsing dots'],
 ];
 
+const NOTCH_STYLES = [
+    ['classic', 'Classic line'],
+    ['liquid', 'Liquid drop'],
+];
+
 const AGENT_COLORS = [
     ['accent', 'Accent color'],
     ['teal', 'Teal'],
@@ -175,6 +180,8 @@ export default class ZorinNotchPreferences extends ExtensionPreferences {
         notch.add(notchBehavior);
 
         const notchLook = new Adw.PreferencesGroup({title: _('Appearance')});
+        notchLook.add(choiceRow(settings, 'notch-style', 'Notch style',
+            'Liquid: a lens at rest that drops into a bead toward the pointer', NOTCH_STYLES));
         notchLook.add(switchRow(settings, 'notch-floating', 'Floating notch',
             'A rounded pill below the top edge instead of a notch cut into it'));
         const offset = spinRow(settings, 'notch-float-offset', 'Distance from the top',

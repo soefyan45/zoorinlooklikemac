@@ -132,6 +132,14 @@
     </key>
 
     <!-- Notch look -->
+    <key name="notch-style" type="s">
+      <choices>
+        <choice value="classic"/>
+        <choice value="liquid"/>
+      </choices>
+      <default>'classic'</default>
+      <summary>Look of the notch: classic line, or liquid (a lens that drops into a bead toward the pointer)</summary>
+    </key>
     <key name="notch-floating" type="b">
       <default>false</default>
       <summary>Float the notch below the top edge as a rounded pill</summary>
