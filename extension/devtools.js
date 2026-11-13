@@ -863,6 +863,10 @@ async function testBarModes(extension, shotDir) {
             parent.get_children().indexOf(bar.actor));
         if (shotDir)
             await screenshotFull(`${shotDir}/bar-full.png`);
+        check('with the bar, hovering leaves the notch empty', !notch._hoverStatus());
+        settings.set_string('notch-hover-status', 'always');
+        check('the status row can be kept on hover', notch._hoverStatus());
+        settings.reset('notch-hover-status');
 
         settings.set_string('bar-mode', 'islands');
         await wait(800);
@@ -880,6 +884,7 @@ async function testBarModes(extension, shotDir) {
 
         settings.set_string('bar-mode', 'line');
         await wait(800);
+        check('line mode shows the status on hover', notch._hoverStatus());
         check('line mode removes the bar', !notch._topBar && workTop() === 0, `${!!notch._topBar} ${workTop()}`);
     } finally {
         settings.reset('bar-mode');

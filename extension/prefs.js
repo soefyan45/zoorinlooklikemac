@@ -427,6 +427,15 @@ export default class ZorinNotchPreferences extends ExtensionPreferences {
             previewDock(cr, w, h);
         }}))));
         notch.add(barGroup);
+        // Its own group, below the cards
+        const hoverGroup = new Adw.PreferencesGroup();
+        hoverGroup.add(choiceRow(settings, 'notch-hover-status', 'Status in the notch',
+            'Date, time, network and battery when the pointer is on the notch', [
+                ['auto', 'Automatic: hidden while the bar or the islands show them'],
+                ['always', 'Always'],
+                ['never', 'Never: only agents, music and notifications'],
+            ]));
+        notch.add(hoverGroup);
         const notchBehavior = new Adw.PreferencesGroup({title: _('Behavior')});
         notchBehavior.add(spinRow(settings, 'notification-seconds', 'Notification time',
             'Seconds before a notification turns back into the line', {lower: 2, upper: 30}));

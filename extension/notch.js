@@ -263,6 +263,18 @@ export class Notch {
         return this._settings?.get_string('bar-mode') ?? BarMode.LINE;
     }
 
+    // Whether hovering the notch opens its status row. With the full bar or the islands the
+    // date, time and status are already on screen: the notch then stays empty on hover and only
+    // shows agents, music on its line, and notifications (Pego "Mode bar", user's choice)
+    _hoverStatus() {
+        const choice = this._settings?.get_string('notch-hover-status') ?? 'auto';
+        if (choice === 'auto') {
+            const mode = this._barMode();
+            return mode !== BarMode.BAR && mode !== BarMode.ISLANDS;
+        }
+        return choice === 'always';
+    }
+
     _syncTopBar() {
         const mode = this._barMode();
         if (mode !== BarMode.BAR && mode !== BarMode.ISLANDS) {
@@ -749,6 +761,10 @@ export class Notch {
         case 'system-chart-color':
             this._onSystemChanged();
             break;
+        case 'notch-hover-status':
+            if (this._state === State.PEEK && !this._hoverStatus())
+                this.setState(State.IDLE);
+            break;
         case 'bar-mode':
             this._syncTopBar();
             this.setState(State.IDLE);
@@ -995,7 +1011,8 @@ export class Notch {
         const [aw, ah] = this.actor.get_transformed_size();
         if (this.actor.hover || (px >= ax - margin && px <= ax + aw + margin &&
             py >= ay && py <= ay + ah + margin)) {
-            this.setState(State.PEEK);
+            // Without the status row the notch just shows it is there (a click opens the panel)
+            this.setState(this._hoverStatus() ? State.PEEK : this._activityShown() ? State.ACTIVITY : State.HOVER);
             return;
         }
 

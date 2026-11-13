@@ -194,6 +194,15 @@
       <default>'line'</default>
       <summary>What shows at the top while the notch rests: the thin line, the status notch, a full menu bar or glass islands</summary>
     </key>
+    <key name="notch-hover-status" type="s">
+      <choices>
+        <choice value="auto"/>
+        <choice value="always"/>
+        <choice value="never"/>
+      </choices>
+      <default>'auto'</default>
+      <summary>Date, time, network and battery in the notch on hover: auto hides them while the full bar or the islands show them</summary>
+    </key>
     <key name="notch-style" type="s">
       <choices>
         <choice value="classic"/>
