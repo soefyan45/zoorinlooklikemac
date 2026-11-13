@@ -891,7 +891,7 @@ async function testBarModes(extension, shotDir) {
         check('line mode shows the status on hover', notch._hoverStatus());
         check('line mode removes the bar', !notch._topBar && workTop() === 0, `${!!notch._topBar} ${workTop()}`);
     } finally {
-        settings.reset('bar-mode');
+        settings.set_string('bar-mode', 'line');
         notch.freezePointer(false);
         notch.setState(State.IDLE);
         await waitSettled(notch);
@@ -991,8 +991,9 @@ async function testSystem(extension, shotDir) {
         check('switched off: no system info', !notch._statusRow.systemButton.visible && !bar._systemGroup.visible);
     } finally {
         notch._systemPanel?.close();
-        for (const key of ['show-system', 'system-panel-style', 'bar-mode', 'system-temp-notify'])
+        for (const key of ['show-system', 'system-panel-style', 'system-temp-notify'])
             settings.reset(key);
+        settings.set_string('bar-mode', 'line');
         daemon.force_exit();
         notch.freezePointer(false);
         notch.setState(State.IDLE);
@@ -1173,6 +1174,15 @@ export async function runSelfTest(extension) {
         await wait(300);
         const actors = countNotchActors();
         check('enable/disable x10 leaves one notch', actors === 1, `${actors} actor(s)`);
+
+        // New installs start with the full menu bar; the rest of the test starts from the line
+        const fresh = extension.getSettings();
+        const topBars = global.stage.get_children().flatMap(c => [c, ...c.get_children()])
+            .filter(a => a.name === 'zorinNotchTopBar').length;
+        check('a new install shows the full menu bar', fresh.get_string('bar-mode') === 'bar' &&
+            !!extension.notch._topBar && topBars === 1, `${fresh.get_string('bar-mode')} bars=${topBars}`);
+        fresh.set_string('bar-mode', 'line');
+        await wait(SETTLE_MS);
 
         const notch = extension.notch;
         notch.freezePointer(true);

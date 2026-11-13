@@ -137,7 +137,7 @@
       <summary>CPU load and temperature in the status row or the top bar; a click opens the detail (needs the zorin-notchd daemon)</summary>
     </key>
     <key name="system-items" type="as">
-      <default>['cpu-load', 'cpu-temp']</default>
+      <default>['cpu-temp']</default>
       <summary>What the top bar shows of the system: cpu-load, cpu-temp, gpu, memory, ssd-temp, network</summary>
     </key>
     <key name="system-graph" type="b">
@@ -205,7 +205,7 @@
         <choice value="bar"/>
         <choice value="islands"/>
       </choices>
-      <default>'line'</default>
+      <default>'bar'</default>
       <summary>What shows at the top while the notch rests: the thin line, the status notch, a full menu bar or glass islands</summary>
     </key>
     <key name="notch-hover-status" type="s">
