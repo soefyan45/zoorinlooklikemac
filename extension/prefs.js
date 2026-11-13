@@ -11,6 +11,7 @@ import Gtk from 'gi://Gtk';
 
 import {ExtensionPreferences} from 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
 
+import {FanBoostConfig, fanServiceInstalled} from './fanboost.js';
 import {LANGUAGES, _, setLanguage} from './i18n.js';
 
 const THEMES = [
@@ -510,6 +511,29 @@ export default class ZorinNotchPreferences extends ExtensionPreferences {
         for (const row of [items])
             settings.bind('show-system', row, 'sensitive', Gio.SettingsBindFlags.GET);
 
+        // Fan boost (ASUS laptops): enable and limits of the zoorin-fan-boost root service
+        const fan = new Adw.PreferencesGroup({title: _('Fan'),
+            description: fanServiceInstalled()
+                ? _('Full fan speed while the CPU is hot; the service picks up changes within seconds')
+                : _('Needs the fan service, installed once: sudo ./scripts/install-fan-boost.sh')});
+        const fanRows = [
+            switchRow(settings, 'fan-boost', 'Full fan speed when hot', "The firmware's auto fan curve the rest of the time"),
+            spinRow(settings, 'fan-boost-on', 'Full speed from', '°C, CPU temperature', {lower: 60, upper: 95}),
+            spinRow(settings, 'fan-boost-off', 'Back to auto below', '°C, a few degrees lower so the fan does not flap',
+                {lower: 50, upper: 90}),
+        ];
+        fanRows.forEach(row => {
+            row.sensitive = fanServiceInstalled();
+            fan.add(row);
+        });
+        if (fanServiceInstalled()) {
+            settings.bind('fan-boost', fanRows[1], 'sensitive', Gio.SettingsBindFlags.GET);
+            settings.bind('fan-boost', fanRows[2], 'sensitive', Gio.SettingsBindFlags.GET);
+        }
+        // Write at once from here too: the running shell may still have older extension code
+        const fanConfig = new FanBoostConfig(settings);
+        window.connect('close-request', () => fanConfig.destroy());
+
         // Detail panel: three style cards and the chart color
         const panelGroup = new Adw.PreferencesGroup({title: _('Detail panel style'),
             description: _('Background and chart color of the panel that opens when the system info is clicked')});
@@ -541,6 +565,7 @@ export default class ZorinNotchPreferences extends ExtensionPreferences {
         notch.add(system);
         notch.add(panelGroup);
         notch.add(chartGroup);
+        notch.add(fan);
         notch.add(notchBehavior);
         notch.add(notchLook);
         window.add(notch);

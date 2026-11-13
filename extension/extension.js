@@ -3,6 +3,7 @@ import GLib from 'gi://GLib';
 import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';
 
 import {DockZoom} from './dockzoom.js';
+import {FanBoostConfig} from './fanboost.js';
 import {setLanguage} from './i18n.js';
 import {Notch} from './notch.js';
 import {ThemeManager} from './theme.js';
@@ -45,6 +46,8 @@ export default class ZorinNotchExtension extends Extension {
         this._createNotch();
         try {
             this._dockZoom = new DockZoom(this._settings, this._theme);
+            // Fan boost settings to the root service's config file (when it is installed)
+            this._fanBoost = new FanBoostConfig(this._settings);
         } catch (e) {
             console.error(LOG_PREFIX, 'failed to set up dock zoom', e);
             this._dockZoom = null;
@@ -81,6 +84,8 @@ export default class ZorinNotchExtension extends Extension {
         this._settings?.disconnectObject(this);
         this._dockZoom?.destroy();
         this._dockZoom = null;
+        this._fanBoost?.destroy();
+        this._fanBoost = null;
         this._destroyNotch();
         this._theme?.destroy();
         this._theme = null;

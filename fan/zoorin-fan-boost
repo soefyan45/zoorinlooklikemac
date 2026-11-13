@@ -2,15 +2,39 @@
 # Full fan speed while the CPU is hot, for ASUS laptops whose firmware offers only "auto" and
 # "full" (asus-wmi pwm1_enable: 2 = auto, 0 = full speed; no custom fan curves, e.g. Zenbook 14).
 # At ON °C or more the fan runs at full speed; below OFF °C it goes back to the firmware's auto
-# mode. Runs as root from zoorin-fan-boost.service; settings in /etc/default/zoorin-fan-boost.
-# FAN_FILE and TEMP_FILE override the sysfs files (for trying it out without root).
+# mode. Runs as root from zoorin-fan-boost.service.
+#
+# Settings: CONFIG (/etc/zoorin-fan-boost/fan.conf), owned by the desktop user so the
+# Zoorinlooklikemac preferences can change them: ENABLED=0|1, ON=°C, OFF=°C, INTERVAL=seconds.
+# Read again every round, so changes apply at once. The file is parsed, never sourced: only
+# those keys with whole numbers in a safe range are taken, anything else is ignored.
+# FAN_FILE, TEMP_FILE and CONFIG override the paths (for trying it out without root).
 set -u
 
-ON="${ON:-75}"
-OFF="${OFF:-68}"
-INTERVAL="${INTERVAL:-2}"
+CONFIG="${CONFIG:-/etc/zoorin-fan-boost/fan.conf}"
+ENABLED=1
+ON=75
+OFF=68
+INTERVAL=2
 AUTO=2
 FULL=0
+
+# KEY=number lines of the config, each checked against its range
+read_config() {
+    [[ -r "$CONFIG" ]] || return 0
+    local key value
+    while IFS='=' read -r key value; do
+        [[ "$value" =~ ^[0-9]+$ ]] || continue
+        case "$key" in
+            ENABLED) (( value <= 1 )) && ENABLED=$value ;;
+            ON) (( value >= 50 && value <= 100 )) && ON=$value ;;
+            OFF) (( value >= 40 && value <= 99 )) && OFF=$value ;;
+            INTERVAL) (( value >= 1 && value <= 30 )) && INTERVAL=$value ;;
+        esac
+    done < "$CONFIG"
+    # Back to auto only below the full speed mark
+    (( OFF < ON )) || OFF=$(( ON - 1 ))
+}
 
 hwmon() {
     for dir in /sys/class/hwmon/hwmon*; do
@@ -45,11 +69,16 @@ restore() {
 trap 'restore; exit 0' TERM INT
 trap restore EXIT
 
-echo "zoorin-fan-boost: full speed from ${ON}°C, auto below ${OFF}°C"
+read_config
+echo "zoorin-fan-boost: full speed from ${ON}°C, auto below ${OFF}°C (enabled: $ENABLED)"
 full=0
 while true; do
+    read_config
     temp=$(( $(cat "$TEMP_FILE") / 1000 ))
-    if (( !full && temp >= ON )); then
+    if (( !ENABLED )); then
+        (( full )) && echo "zoorin-fan-boost: switched off, fan back to auto"
+        full=0
+    elif (( !full && temp >= ON )); then
         full=1
         echo "zoorin-fan-boost: ${temp}°C, fan to full speed"
     elif (( full && temp < OFF )); then

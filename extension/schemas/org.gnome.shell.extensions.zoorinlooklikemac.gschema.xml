@@ -184,6 +184,20 @@
       <default>'accent'</default>
       <summary>Color of the CPU load chart</summary>
     </key>
+    <key name="fan-boost" type="b">
+      <default>true</default>
+      <summary>Full fan speed while the CPU is hot (needs the zoorin-fan-boost service, ASUS laptops)</summary>
+    </key>
+    <key name="fan-boost-on" type="i">
+      <range min="60" max="95"/>
+      <default>75</default>
+      <summary>CPU temperature (°C) that turns the fan to full speed</summary>
+    </key>
+    <key name="fan-boost-off" type="i">
+      <range min="50" max="90"/>
+      <default>68</default>
+      <summary>CPU temperature (°C) below which the fan goes back to auto</summary>
+    </key>
     <key name="bar-mode" type="s">
       <choices>
         <choice value="line"/>
