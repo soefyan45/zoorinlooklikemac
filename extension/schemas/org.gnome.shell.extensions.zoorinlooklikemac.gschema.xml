@@ -185,7 +185,7 @@
       <summary>Color of the CPU load chart</summary>
     </key>
     <key name="fan-boost" type="b">
-      <default>true</default>
+      <default>false</default>
       <summary>Full fan speed while the CPU is hot (needs the zoorin-fan-boost service, ASUS laptops)</summary>
     </key>
     <key name="fan-boost-on" type="i">

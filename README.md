@@ -111,7 +111,8 @@ Then log out and back in (on Wayland GNOME Shell loads new extensions at login).
 
 Some ASUS laptops (e.g. Zenbook 14) let the fan run only on the firmware's auto curve or at full
 speed. `zoorin-fan-boost` is a small root service that turns it to full speed while the CPU is hot
-and back to auto when it cools down (default: full from 75 °C, auto below 68 °C). Turn it on or off
+and back to auto when it cools down (default: full from 75 °C, auto below 68 °C). It is off after
+installing: turn it on
 and set both temperatures in Preferences > Notch > Fan; they are written to
 `/etc/zoorin-fan-boost/fan.conf` (owned by you) and the service picks them up within seconds.
 
