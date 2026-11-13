@@ -40,5 +40,7 @@ if [[ ! -f /etc/zoorin-fan-boost/fan.conf ]]; then
 fi
 rm -f /etc/default/zoorin-fan-boost
 systemctl daemon-reload
-systemctl enable --now zoorin-fan-boost.service
+systemctl enable zoorin-fan-boost.service
+# A running service keeps the old script until it is restarted
+systemctl restart zoorin-fan-boost.service
 systemctl --no-pager --lines=3 status zoorin-fan-boost.service || true
