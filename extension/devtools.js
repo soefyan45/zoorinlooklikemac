@@ -967,13 +967,22 @@ async function testSystem(extension, shotDir) {
         await wait(1500);
         check('staying hot notifies once, and not again within the quiet time',
             notch._messages.list().length === before + 1, `${before} -> ${notch._messages.list().length}`);
+        // Switched off: the dot still warns, no notification
+        settings.set_boolean('system-temp-notify', false);
+        Object.assign(system, {_warned: false, _hotSince: null, _lastWarning: -Infinity});
+        system._checkHeat(99, 0);
+        system._checkHeat(99, 60000);
+        await wait(800);
+        check('heat notification can be switched off', notch._messages.list().length === before + 1,
+            `${before + 1} -> ${notch._messages.list().length}`);
+        settings.reset('system-temp-notify');
 
         settings.set_boolean('show-system', false);
         await wait(800);
         check('switched off: no system info', !notch._statusRow.systemButton.visible && !bar._systemGroup.visible);
     } finally {
         notch._systemPanel?.close();
-        for (const key of ['show-system', 'system-panel-style', 'bar-mode'])
+        for (const key of ['show-system', 'system-panel-style', 'bar-mode', 'system-temp-notify'])
             settings.reset(key);
         daemon.force_exit();
         notch.freezePointer(false);

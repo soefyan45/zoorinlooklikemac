@@ -491,7 +491,13 @@ export default class ZorinNotchPreferences extends ExtensionPreferences {
         system.add(spinRow(settings, 'system-interval', 'Update every', 'Seconds; less often saves battery',
             {lower: 1, upper: 10}));
         system.add(spinRow(settings, 'system-temp-warning', 'Temperature warning',
-            '°C: the dot turns red and the notch tells you once', {lower: 60, upper: 100}));
+            '°C: the dot turns red above it', {lower: 60, upper: 100}));
+        system.add(switchRow(settings, 'system-temp-notify', 'Heat notification',
+            'A notification when the CPU stays above the warning for 30 seconds'));
+        const repeat = spinRow(settings, 'system-temp-repeat', 'Remind again after',
+            'Minutes before another heat notification', {lower: 5, upper: 240, step: 5});
+        settings.bind('system-temp-notify', repeat, 'sensitive', Gio.SettingsBindFlags.GET);
+        system.add(repeat);
         for (const row of [items])
             settings.bind('show-system', row, 'sensitive', Gio.SettingsBindFlags.GET);
 

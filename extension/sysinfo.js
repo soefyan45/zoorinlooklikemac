@@ -19,9 +19,8 @@ const WARM = 60;
 // The warning comes back only after cooling this much below the limit
 const COOL_DOWN = 5;
 // Laptop CPUs touch high temperatures for a few seconds all the time: warn only when it stays
-// hot this long, and not again sooner than this
+// hot this long (and not again before the time set in the preferences)
 const HOT_HOLD_MS = 30 * 1000;
-const HOT_REPEAT_MS = 15 * 60 * 1000;
 
 export const SystemItem = {
     CPU_LOAD: 'cpu-load',
@@ -150,7 +149,11 @@ export class SystemStats {
             return;
         }
         this._hotSince ??= now;
-        if (!this._warned && now - this._hotSince >= HOT_HOLD_MS && now - this._lastWarning >= HOT_REPEAT_MS) {
+        // The dot still turns red; only the notification can be switched off
+        if (!this._settings.get_boolean('system-temp-notify'))
+            return;
+        const repeatMs = this._settings.get_int('system-temp-repeat') * 60 * 1000;
+        if (!this._warned && now - this._hotSince >= HOT_HOLD_MS && now - this._lastWarning >= repeatMs) {
             this._warned = true;
             this._lastWarning = now;
             this._onHot(temp);

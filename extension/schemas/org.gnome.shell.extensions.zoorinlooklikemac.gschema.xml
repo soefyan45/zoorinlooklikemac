@@ -154,6 +154,15 @@
       <default>80</default>
       <summary>CPU temperature (°C) that turns the dot red and gives one notification</summary>
     </key>
+    <key name="system-temp-notify" type="b">
+      <default>true</default>
+      <summary>Notify when the CPU stays above the temperature warning</summary>
+    </key>
+    <key name="system-temp-repeat" type="i">
+      <range min="5" max="240"/>
+      <default>30</default>
+      <summary>Minutes before a heat notification may come again</summary>
+    </key>
     <key name="system-panel-style" type="s">
       <choices>
         <choice value="dark"/>
