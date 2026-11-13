@@ -5,7 +5,9 @@
 # mode. Runs as root from zoorin-fan-boost.service.
 #
 # Settings: CONFIG (/etc/zoorin-fan-boost/fan.conf), owned by the desktop user so the
-# Zoorinlooklikemac preferences can change them: ENABLED=0|1, ON=°C, OFF=°C, INTERVAL=seconds.
+# Zoorinlooklikemac preferences can change them: ENABLED=0|1, ON=°C, OFF=°C, INTERVAL=seconds,
+# HOLD=seconds (the fan stays at full speed at least this long, so the package temperature,
+# which jumps by 20 °C within seconds, does not switch it on and off every few seconds).
 # Read again every round, so changes apply at once. The file is parsed, never sourced: only
 # those keys with whole numbers in a safe range are taken, anything else is ignored.
 # FAN_FILE, TEMP_FILE and CONFIG override the paths (for trying it out without root).
@@ -16,6 +18,7 @@ ENABLED=1
 ON=75
 OFF=68
 INTERVAL=2
+HOLD=60
 AUTO=2
 FULL=0
 
@@ -30,6 +33,7 @@ read_config() {
             ON) (( value >= 50 && value <= 100 )) && ON=$value ;;
             OFF) (( value >= 40 && value <= 99 )) && OFF=$value ;;
             INTERVAL) (( value >= 1 && value <= 30 )) && INTERVAL=$value ;;
+            HOLD) (( value >= 0 && value <= 600 )) && HOLD=$value ;;
         esac
     done < "$CONFIG"
     # Back to auto only below the full speed mark
@@ -72,6 +76,7 @@ trap restore EXIT
 read_config
 echo "zoorin-fan-boost: full speed from ${ON}°C, auto below ${OFF}°C (enabled: $ENABLED)"
 full=0
+full_since=0
 while true; do
     read_config
     temp=$(( $(cat "$TEMP_FILE") / 1000 ))
@@ -80,8 +85,9 @@ while true; do
         full=0
     elif (( !full && temp >= ON )); then
         full=1
+        full_since=$SECONDS
         echo "zoorin-fan-boost: ${temp}°C, fan to full speed"
-    elif (( full && temp < OFF )); then
+    elif (( full && temp < OFF && SECONDS - full_since >= HOLD )); then
         full=0
         echo "zoorin-fan-boost: ${temp}°C, fan back to auto"
     fi

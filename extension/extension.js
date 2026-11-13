@@ -46,8 +46,10 @@ export default class ZorinNotchExtension extends Extension {
         this._createNotch();
         try {
             this._dockZoom = new DockZoom(this._settings, this._theme);
-            // Fan boost settings to the root service's config file (when it is installed)
-            this._fanBoost = new FanBoostConfig(this._settings);
+            // Fan boost settings to the root service's config file (when it is installed). Not in
+            // a test run: the nested shell has its own settings but the same /etc file
+            if (!DRY_RUN)
+                this._fanBoost = new FanBoostConfig(this._settings);
         } catch (e) {
             console.error(LOG_PREFIX, 'failed to set up dock zoom', e);
             this._dockZoom = null;
