@@ -74,9 +74,28 @@ Screenshots from the extension running in a nested GNOME Shell.
 - Zorin OS 18 (GNOME Shell 46) on Wayland
 - `zorin-taskbar` (preinstalled on Zorin OS) for the dock
 - `jq` and `gdbus` for the agent hooks
+- From source: Rust (cargo) for the `zorin-notchd` daemon (`scripts/install-daemon.sh`)
 - No sudo, no system files: everything lives in your home folder
 
 ## Install
+
+### From a release (no build tools)
+
+Download `zoorinlooklikemac-<version>-linux-x86_64.tar.gz` from
+[Releases](https://github.com/soefyan45/zoorinlooklikemac/releases) (built by GitHub Actions on
+Ubuntu 24.04, the base of Zorin OS 18), then:
+
+```bash
+tar xzf zoorinlooklikemac-*-linux-x86_64.tar.gz
+cd zoorinlooklikemac-*-linux-x86_64
+./install.sh                 # extension + zorin-notchd daemon (makes a backup first)
+./install.sh --dock --agents # optional: also the dock preset and the agent hooks
+./install.sh --remove        # take it out again
+```
+
+Then log out and back in.
+
+### From source
 
 ```bash
 git clone https://github.com/soefyan45/zoorinlooklikemac.git

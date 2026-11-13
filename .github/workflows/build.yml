@@ -1,0 +1,96 @@
+# Build on GitHub for Linux: test and build the zorin-notchd daemon, check the extension's
+# settings schema, pack the extension, and upload everything as a release archive.
+# A pushed tag vX.Y.Z also publishes a GitHub Release with that archive.
+# (The nested GNOME Shell self test needs a graphical session and runs locally only.)
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  UUID: zoorinlooklikemac@soefyan45.github.io
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    # Ubuntu 24.04, the base of Zorin OS 18: the daemon links against the same glibc
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Tools
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libglib2.0-bin zip
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: daemon
+
+      - name: Version
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+          else
+            echo "VERSION=dev-${GITHUB_SHA::7}" >> "$GITHUB_ENV"
+          fi
+
+      - name: Test the daemon
+        run: cargo test --manifest-path daemon/Cargo.toml
+
+      - name: Build the daemon
+        run: cargo build --release --manifest-path daemon/Cargo.toml
+
+      - name: Check the extension
+        run: |
+          glib-compile-schemas --strict --dry-run extension/schemas
+          python3 -c "import json; m = json.load(open('extension/metadata.json')); assert m['uuid'] == '$UUID', m['uuid']"
+          for f in extension/*.js; do
+            grep -q "zorin-notch@" "$f" && { echo "old extension id in $f"; exit 1; } || true
+          done
+
+      - name: Pack
+        run: |
+          python3 - <<'EOF'
+          import json, os
+          path = 'extension/metadata.json'
+          meta = json.load(open(path))
+          meta['version-name'] = os.environ['VERSION']
+          open(path, 'w').write(json.dumps(meta, indent=2) + '\n')
+          EOF
+          glib-compile-schemas --strict extension/schemas
+          NAME="zoorinlooklikemac-$VERSION-linux-x86_64"
+          mkdir -p "dist/$NAME/scripts"
+          (cd extension && zip -qr "../dist/$NAME/$UUID.shell-extension.zip" . -x devtools.js)
+          install -m 755 daemon/target/release/zorin-notchd "dist/$NAME/"
+          install -m 755 scripts/install-release.sh "dist/$NAME/install.sh"
+          install -m 755 scripts/backup.sh scripts/rollback.sh scripts/apply-dock.sh \
+            scripts/install-agent-hooks.sh "dist/$NAME/scripts/"
+          cp -r dock agents "dist/$NAME/"
+          cp README.md LICENSE "dist/$NAME/"
+          tar -C dist -czf "dist/$NAME.tar.gz" "$NAME"
+          (cd dist && sha256sum "$NAME.tar.gz" > "$NAME.tar.gz.sha256")
+          echo "NAME=$NAME" >> "$GITHUB_ENV"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.NAME }}
+          path: |
+            dist/${{ env.NAME }}.tar.gz
+            dist/${{ env.NAME }}.tar.gz.sha256
+
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/${{ env.NAME }}.tar.gz
+            dist/${{ env.NAME }}.tar.gz.sha256
+          generate_release_notes: true
