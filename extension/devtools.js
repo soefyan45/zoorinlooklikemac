@@ -952,12 +952,21 @@ async function testSystem(extension, shotDir) {
         notch.setState(State.IDLE);
         await wait(500);
         const before = notch._messages.list().length;
-        notch._system._warned = false;
-        notch._system._checkHeat(99);
-        notch._system._checkHeat(99);
-        await wait(1500);
-        check('a hot CPU notifies once', notch._messages.list().length === before + 1,
+        const system = notch._system;
+        Object.assign(system, {_warned: false, _hotSince: null, _lastWarning: -Infinity});
+        system._checkHeat(99, 0);
+        system._checkHeat(99, 10000);
+        await wait(800);
+        check('a short spike does not notify', notch._messages.list().length === before,
             `${before} -> ${notch._messages.list().length}`);
+        system._checkHeat(99, 31000);
+        system._checkHeat(99, 40000);
+        system._checkHeat(70, 50000);
+        system._checkHeat(99, 60000);
+        system._checkHeat(99, 95000);
+        await wait(1500);
+        check('staying hot notifies once, and not again within the quiet time',
+            notch._messages.list().length === before + 1, `${before} -> ${notch._messages.list().length}`);
 
         settings.set_boolean('show-system', false);
         await wait(800);

@@ -76,6 +76,8 @@ const LIQUID_STATES = new Set(['idle', 'hover', 'activity']);
 const SYSTEM_ROW_EXTRA = 96;
 
 const POINTER_POLL_MS = 50;
+// Seconds between redraws of the agent, music and liquid animations
+const ACTIVITY_FRAME = 1 / 30;
 // Minimum size of the standby line while agent dots light up inside it
 const DOTS_LINE = [60, 8];
 // The hover line is this much larger than the standby line (design: 120×4 -> 160×6)
@@ -168,10 +170,16 @@ export class Notch {
         this._activityTimeline = new Clutter.Timeline({actor: this.actor, duration: 1000, repeat_count: -1});
         this._activityTimeline.connect('new-frame', () => {
             this._activityPhase += Math.min(this._activityTimeline.get_delta(), 50) / 1000;
+            // These animations are slow: 30 frames a second look the same as 60 and redraw half
+            // as often (they run as long as an agent works)
+            if (this._activityPhase - this._paintedPhase < ACTIVITY_FRAME)
+                return;
+            this._paintedPhase = this._activityPhase;
             // The liquid bead follows the pointer smoothly
-            this._lean += (this._leanTarget - this._lean) * 0.2;
+            this._lean += (this._leanTarget - this._lean) * 0.3;
             this._area.queue_repaint();
         });
+        this._paintedPhase = 0;
         this._lean = 0;
         this._leanTarget = 0;
 

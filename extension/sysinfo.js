@@ -18,6 +18,10 @@ export const HISTORY = 40;
 const WARM = 60;
 // The warning comes back only after cooling this much below the limit
 const COOL_DOWN = 5;
+// Laptop CPUs touch high temperatures for a few seconds all the time: warn only when it stays
+// hot this long, and not again sooner than this
+const HOT_HOLD_MS = 30 * 1000;
+const HOT_REPEAT_MS = 15 * 60 * 1000;
 
 export const SystemItem = {
     CPU_LOAD: 'cpu-load',
@@ -62,6 +66,8 @@ export class SystemStats {
         this.history = [];
         this._timerId = 0;
         this._warned = false;
+        this._hotSince = null;
+        this._lastWarning = -Infinity;
         this._cancellable = new Gio.Cancellable();
         this._settings.connectObject(
             'changed::show-system', () => this._schedule(),
@@ -131,15 +137,23 @@ export class SystemStats {
         this._onChange();
     }
 
-    _checkHeat(temp) {
+    // One notification when the CPU stays above the limit, then quiet until it has cooled down
+    // and some time has passed. now: milliseconds (the self test passes its own clock)
+    _checkHeat(temp, now = GLib.get_monotonic_time() / 1000) {
         if (typeof temp !== 'number')
             return;
         const warning = this._settings.get_int('system-temp-warning');
-        if (!this._warned && temp >= warning) {
+        if (temp < warning) {
+            this._hotSince = null;
+            if (temp < warning - COOL_DOWN)
+                this._warned = false;
+            return;
+        }
+        this._hotSince ??= now;
+        if (!this._warned && now - this._hotSince >= HOT_HOLD_MS && now - this._lastWarning >= HOT_REPEAT_MS) {
             this._warned = true;
+            this._lastWarning = now;
             this._onHot(temp);
-        } else if (this._warned && temp < warning - COOL_DOWN) {
-            this._warned = false;
         }
     }
 
