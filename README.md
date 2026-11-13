@@ -107,6 +107,18 @@ cd zoorinlooklikemac
 
 Then log out and back in (on Wayland GNOME Shell loads new extensions at login).
 
+### Fan boost (ASUS laptops, optional)
+
+Some ASUS laptops (e.g. Zenbook 14) let the fan run only on the firmware's auto curve or at full
+speed. `zoorin-fan-boost` is a small root service that turns it to full speed while the CPU is hot
+and back to auto when it cools down (default: full from 75 °C, auto below 68 °C; change them in
+`/etc/default/zoorin-fan-boost`).
+
+```bash
+sudo ./scripts/install-fan-boost.sh            # install and start
+sudo ./scripts/install-fan-boost.sh --remove   # remove, fan back to auto
+```
+
 ## Undo
 
 ```bash

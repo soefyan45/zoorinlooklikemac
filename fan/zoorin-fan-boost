@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+# Full fan speed while the CPU is hot, for ASUS laptops whose firmware offers only "auto" and
+# "full" (asus-wmi pwm1_enable: 2 = auto, 0 = full speed; no custom fan curves, e.g. Zenbook 14).
+# At ON °C or more the fan runs at full speed; below OFF °C it goes back to the firmware's auto
+# mode. Runs as root from zoorin-fan-boost.service; settings in /etc/default/zoorin-fan-boost.
+# FAN_FILE and TEMP_FILE override the sysfs files (for trying it out without root).
+set -u
+
+ON="${ON:-75}"
+OFF="${OFF:-68}"
+INTERVAL="${INTERVAL:-2}"
+AUTO=2
+FULL=0
+
+hwmon() {
+    for dir in /sys/class/hwmon/hwmon*; do
+        [[ "$(cat "$dir/name" 2>/dev/null)" == "$1" ]] && { echo "$dir"; return 0; }
+    done
+    return 1
+}
+
+# The CPU package temperature (Intel coretemp "Package id 0"), else the first coretemp input
+package_temp() {
+    local dir
+    dir="$(hwmon coretemp)" || return 1
+    for label in "$dir"/temp*_label; do
+        if [[ "$(cat "$label")" == "Package id 0" ]]; then
+            echo "${label%_label}_input"
+            return 0
+        fi
+    done
+    echo "$dir/temp1_input"
+}
+
+FAN_FILE="${FAN_FILE:-$(hwmon asus)/pwm1_enable}"
+TEMP_FILE="${TEMP_FILE:-$(package_temp)}"
+if [[ ! -w "$FAN_FILE" || ! -r "$TEMP_FILE" ]]; then
+    echo "zoorin-fan-boost: no ASUS fan control or CPU temperature here ($FAN_FILE, $TEMP_FILE)" >&2
+    exit 1
+fi
+
+restore() {
+    echo "$AUTO" > "$FAN_FILE" 2>/dev/null
+}
+trap 'restore; exit 0' TERM INT
+trap restore EXIT
+
+echo "zoorin-fan-boost: full speed from ${ON}°C, auto below ${OFF}°C"
+full=0
+while true; do
+    temp=$(( $(cat "$TEMP_FILE") / 1000 ))
+    if (( !full && temp >= ON )); then
+        full=1
+        echo "zoorin-fan-boost: ${temp}°C, fan to full speed"
+    elif (( full && temp < OFF )); then
+        full=0
+        echo "zoorin-fan-boost: ${temp}°C, fan back to auto"
+    fi
+    # Written every round: the firmware sets auto again after a suspend
+    want=$(( full ? FULL : AUTO ))
+    [[ "$(cat "$FAN_FILE")" == "$want" ]] || echo "$want" > "$FAN_FILE"
+    sleep "$INTERVAL"
+done

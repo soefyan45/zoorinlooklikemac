@@ -1,0 +1,17 @@
+[Unit]
+Description=Zoorinlooklikemac: full fan speed while the CPU is hot (ASUS laptops)
+
+[Service]
+Type=simple
+EnvironmentFile=-/etc/default/zoorin-fan-boost
+ExecStart=/usr/local/bin/zoorin-fan-boost
+# Back to the firmware's auto mode however the service stops
+ExecStopPost=/bin/sh -c 'for h in /sys/class/hwmon/hwmon*; do [ "$(cat $h/name)" = asus ] && echo 2 > $h/pwm1_enable; done; true'
+Restart=on-failure
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=multi-user.target
