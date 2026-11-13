@@ -72,6 +72,9 @@ const LIQUID_DROP = 9;
 const LIQUID_DROP_NARROW = 0.87;
 const LIQUID_LEAN = {gain: 0.08, max: 6};
 const LIQUID_STATES = new Set(['idle', 'hover', 'activity']);
+// With the full bar or the islands the resting notch is a black block hanging into the bar, like
+// a MacBook's (Pego "Strip · menu bar penuh"); agents and music animate inside it
+const BAR_NOTCH = [212, 32];
 // The status row grows by this much while it shows the CPU load and temperature
 const SYSTEM_ROW_EXTRA = 96;
 
@@ -611,6 +614,10 @@ export class Notch {
         if (!settings)
             return StateSize[state];
         const idle = [settings.get_int('idle-width'), settings.get_int('idle-height')];
+        const mode = settings.get_string('bar-mode');
+        if ((mode === BarMode.BAR || mode === BarMode.ISLANDS) &&
+            (state === State.IDLE || state === State.HOVER || state === State.ACTIVITY))
+            return BAR_NOTCH;
         switch (state) {
         case State.IDLE:
             return idle;

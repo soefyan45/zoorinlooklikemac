@@ -74,7 +74,13 @@ export class TopBar {
         timeBox.add_child(this._date);
         timeBox.add_child(this._time);
 
+        // "Activities" beside the app, as in the design's full bar (the islands keep just the app)
+        const [activitiesGroup, activitiesBox] = group(() => actions.toggleOverview(), _('Activities'));
+        activitiesBox.add_child(label(_('Activities'), 'zorin-notch-topbar-text'));
+        this._activitiesGroup = activitiesGroup;
+
         const [systemGroup, systemBox] = group(() => actions.openSystem(systemGroup), _('System'));
+        systemGroup.add_style_class_name('system');
         this.system = new SystemChip();
         systemBox.add_child(this.system.actor);
         this._systemGroup = systemGroup;
@@ -85,7 +91,10 @@ export class TopBar {
         right.add_child(systemGroup);
         right.add_child(statusGroup);
         right.add_child(timeGroup);
-        this.actor.add_child(appGroup);
+        const left = new St.BoxLayout({style_class: 'zorin-notch-topbar-left'});
+        left.add_child(appGroup);
+        left.add_child(activitiesGroup);
+        this.actor.add_child(left);
         this.actor.add_child(right);
 
         Main.layoutManager.addTopChrome(this.actor, {affectsStruts: true, trackFullscreen: true});
@@ -101,6 +110,7 @@ export class TopBar {
             this.actor.add_style_class_name('islands');
         else
             this.actor.remove_style_class_name('islands');
+        this._activitiesGroup.visible = mode !== BarMode.ISLANDS;
         this._place();
     }
 

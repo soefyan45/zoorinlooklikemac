@@ -864,6 +864,10 @@ async function testBarModes(extension, shotDir) {
         if (shotDir)
             await screenshotFull(`${shotDir}/bar-full.png`);
         check('with the bar, hovering leaves the notch empty', !notch._hoverStatus());
+        const [blockW, blockH] = notch._sizeOf(State.IDLE);
+        check('with the bar the notch rests as a block', blockW === 212 && blockH === 32 &&
+            Math.round(notch._height.value) === 32, `${blockW}x${blockH} ${notch.debugSize}`);
+        check('the bar shows Activities beside the app', bar._activitiesGroup.visible);
         settings.set_string('notch-hover-status', 'always');
         check('the status row can be kept on hover', notch._hoverStatus());
         settings.reset('notch-hover-status');

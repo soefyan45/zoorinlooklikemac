@@ -710,6 +710,18 @@
     font-weight: 600;
 }
 
+.zorin-notch-topbar-left {
+    spacing: 14px;
+}
+
+/* The system item stands out a little in the bar, as in the design */
+.zorin-notch-topbar .zorin-notch-topbar-group.system {
+    min-height: 24px;
+    margin-top: 4px;
+    padding: 0 8px;
+    background-color: rgba(255, 255, 255, 0.12);
+}
+
 /* Islands: no bar, each group floats in the dock's glass */
 .zorin-notch-topbar.islands {
     padding: 8px 10px 0 10px;
@@ -720,8 +732,10 @@
     spacing: 8px;
 }
 
-.zorin-notch-topbar.islands .zorin-notch-topbar-group {
+.zorin-notch-topbar.islands .zorin-notch-topbar-group,
+.zorin-notch-topbar.islands .zorin-notch-topbar-group.system {
     min-height: 30px;
+    margin-top: 0;
     padding: 0 14px;
     border-radius: 999px;
     border: 1px solid rgba(255, 255, 255, 0.28);

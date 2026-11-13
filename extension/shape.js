@@ -299,6 +299,16 @@ export function drawNotch(cr, areaWidth, w, h, opts) {
     } else {
         setColor(cr, Color.notch);
         cr.fill();
+        // The notch block of the bar modes: agents and music play on a line inside it
+        if (activity) {
+            const dots = activity.music || activity.style === 'swap' || activity.style === 'dots';
+            const lineW = Math.min(120 * scale, w - 2 * ear - 40 * scale);
+            const lineH = (dots ? 8 : 4) * scale;
+            cr.save();
+            cr.translate(0, h - lineH - 8 * scale);
+            drawActivity(cr, x + (w - lineW) / 2, lineW, lineH, scale, activity);
+            cr.restore();
+        }
     }
 
     if (showCamera && h >= 26 * scale) {
