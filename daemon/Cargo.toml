@@ -1,6 +1,6 @@
 [package]
 name = "zorin-notchd"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 description = "Daemon and agent hooks for Zorin Notch"
 license = "MIT"
