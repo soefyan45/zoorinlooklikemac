@@ -12,6 +12,7 @@ import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
 import {_, decimal} from './i18n.js';
 import {LOG_PREFIX} from './log.js';
+import {PowerProfiles} from './powerprofile.js';
 import {parseColor} from './shape.js';
 import {SystemItem, SystemStats, TEMP_COLORS, degrees, formatBytes, formatSpeed, tempLevel} from './sysinfo.js';
 
@@ -19,6 +20,11 @@ const PANEL_WIDTH = 360;
 const MINI_BARS = 6;
 const ANIMATION_MS = 160;
 const MONITOR_APPS = ['org.gnome.SystemMonitor.desktop', 'gnome-system-monitor.desktop'];
+const PROFILE_LABELS = {
+    'power-saver': ['power-profile-power-saver-symbolic', 'Power saver'],
+    'balanced': ['power-profile-balanced-symbolic', 'Balanced'],
+    'performance': ['power-profile-performance-symbolic', 'Performance'],
+};
 export const CHART_COLORS = {teal: '#4FD1C5', blue: '#0A84FF', purple: '#BF5AF2', white: '#FFFFFF'};
 
 function label(text, styleClass) {
@@ -166,7 +172,7 @@ function bar(fraction) {
 
 /**
  * The detail panel's content.
- * actions: {openPreferences(), openMonitor()}
+ * actions: {openPreferences(), openMonitor(), setProfile(name)}
  */
 class SystemView {
     constructor(actions) {
@@ -175,7 +181,7 @@ class SystemView {
         this._chartState = {values: [], color: '#F05A24'};
     }
 
-    update({stats, history, warning, chartColor, interval}) {
+    update({stats, history, warning, chartColor, interval, power}) {
         this.actor.destroy_all_children();
         if (!stats?.cpu) {
             this.actor.add_child(label(_('System info needs the zorin-notchd daemon'), 'zorin-notch-sys-muted'));
@@ -196,6 +202,31 @@ class SystemView {
         prefs.connect('clicked', () => this._actions.openPreferences());
         head.add_child(prefs);
         this.actor.add_child(head);
+
+        // Power profile: power saver, balanced, performance
+        if (power?.profiles.length > 1) {
+            const profiles = new St.BoxLayout({style_class: 'zorin-notch-sys-profiles'});
+            profiles.layout_manager.homogeneous = true;
+            for (const name of power.profiles) {
+                const [iconName, text] = PROFILE_LABELS[name];
+                const content = new St.BoxLayout({style_class: 'zorin-notch-sys-profile-content',
+                    x_align: Clutter.ActorAlign.CENTER});
+                content.add_child(icon(iconName, 'zorin-notch-sys-profile-icon'));
+                content.add_child(label(_(text), 'zorin-notch-sys-profile-label'));
+                const button = new St.Button({
+                    style_class: 'zorin-notch-sys-profile',
+                    child: content,
+                    x_expand: true,
+                    can_focus: true,
+                    accessible_name: _(text),
+                });
+                if (name === power.active)
+                    button.add_style_pseudo_class('checked');
+                button.connect('clicked', () => this._actions.setProfile(name));
+                profiles.add_child(button);
+            }
+            this.actor.add_child(profiles);
+        }
 
         // CPU: load, temperature, chart and the busiest apps
         const cpu = card('zorin-notch-sys-card zorin-notch-sys-cpu');
@@ -316,7 +347,11 @@ export class SystemPanel {
                 const app = MONITOR_APPS.map(id => Shell.AppSystem.get_default().lookup_app(id)).find(Boolean);
                 app?.activate();
             }),
+            setProfile: name => {
+                this._power.active = name;
+            },
         });
+        this._power = new PowerProfiles(() => this.update());
         this.actor = new St.Bin({
             style_class: 'zorin-notch-sys-panel',
             child: this._view.actor,
@@ -345,6 +380,7 @@ export class SystemPanel {
             warning,
             chartColor: this._chartColor(stats, warning),
             interval: this._stats.interval,
+            power: this._power.available ? this._power : null,
         });
     }
 
@@ -412,7 +448,8 @@ export class SystemPanel {
     }
 
     _place(anchor) {
-        const monitor = Main.layoutManager.primaryMonitor;
+        const layout = Main.layoutManager;
+        const monitor = (anchor && layout.findMonitorForActor(anchor)) ?? layout.primaryMonitor;
         if (!monitor)
             return;
         const scale = St.ThemeContext.get_for_stage(global.stage).scale_factor;
@@ -463,6 +500,7 @@ export class SystemPanel {
     }
 
     destroy() {
+        this._power.destroy();
         if (this._grab) {
             Main.popModal(this._grab);
             this._grab = null;

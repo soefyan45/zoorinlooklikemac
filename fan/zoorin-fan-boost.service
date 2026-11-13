@@ -1,11 +1,13 @@
 [Unit]
-Description=Zoorinlooklikemac: full fan speed while the CPU is hot (ASUS laptops)
+Description=Zoorinlooklikemac: full fan speed while the CPU is hot (ASUS laptops) and CPU limits
 
 [Service]
 Type=simple
 ExecStart=/usr/local/bin/zoorin-fan-boost
 # Back to the firmware's auto mode however the service stops
 ExecStopPost=/bin/sh -c 'for h in /sys/class/hwmon/hwmon*; do [ "$(cat $h/name)" = asus ] && echo 2 > $h/pwm1_enable; done; true'
+# The CPU limits back to normal too
+ExecStopPost=/bin/sh -c 'p=/sys/devices/system/cpu/intel_pstate; echo 100 > $p/max_perf_pct; echo 0 > $p/no_turbo; true'
 Restart=on-failure
 ProtectSystem=strict
 ProtectHome=yes

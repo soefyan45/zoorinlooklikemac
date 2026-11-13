@@ -3,7 +3,9 @@
 //   islands: the same content in small glass islands floating below the top edge, with the
 //            dock's glass, so the wallpaper shows between them
 // The notch stays drawn over its middle. The bar reserves its height, so maximized windows
-// start below it, and hides in fullscreen.
+// start below it, and hides in fullscreen. With the notch following the mouse there is one bar
+// per monitor, like macOS: the bar of the monitor without the notch is dimmed (setActive).
+// The bars never move, so maximized windows do not jump when the pointer changes monitors.
 // actions: {toggleOverview(), openPanel(), openList(), openSystem(anchor)}
 
 import Clutter from 'gi://Clutter';
@@ -25,6 +27,8 @@ export const BarMode = {
 
 // Height reserved at the top in each mode
 const HEIGHT = {[BarMode.BAR]: 32, [BarMode.ISLANDS]: 44};
+// Content of a bar on a monitor without the notch
+const INACTIVE_OPACITY = 115;
 
 function label(text, styleClass) {
     return new St.Label({text, style_class: styleClass, y_align: Clutter.ActorAlign.CENTER});
@@ -49,8 +53,10 @@ function group(onClick, accessibleName) {
 }
 
 export class TopBar {
-    constructor(mode, actions) {
+    constructor(mode, actions, monitorIndex) {
         this._mode = mode;
+        this._monitorIndex = monitorIndex;
+        this.active = true;
         this.actor = new St.BoxLayout({style_class: 'zorin-notch-topbar', name: 'zorinNotchTopBar'});
 
         const [appGroup, appBox] = group(() => actions.toggleOverview(), _('Activities'));
@@ -96,6 +102,7 @@ export class TopBar {
         left.add_child(activitiesGroup);
         this.actor.add_child(left);
         this.actor.add_child(right);
+        this._content = [left, right];
 
         Main.layoutManager.addTopChrome(this.actor, {affectsStruts: true, trackFullscreen: true});
         Main.layoutManager.connectObject('monitors-changed', () => this._place(), this);
@@ -112,6 +119,18 @@ export class TopBar {
             this.actor.remove_style_class_name('islands');
         this._activitiesGroup.visible = mode !== BarMode.ISLANDS;
         this._place();
+    }
+
+    setMonitor(index) {
+        this._monitorIndex = index;
+        this._place();
+    }
+
+    // The bar of a monitor without the notch shows its content dimmed
+    setActive(active) {
+        this.active = active;
+        for (const box of this._content)
+            box.opacity = active ? 255 : INACTIVE_OPACITY;
     }
 
     // The focused app, or the desktop's name when no app has the focus
@@ -143,7 +162,7 @@ export class TopBar {
     }
 
     _place() {
-        const monitor = Main.layoutManager.primaryMonitor;
+        const monitor = Main.layoutManager.monitors[this._monitorIndex] ?? Main.layoutManager.primaryMonitor;
         if (!monitor)
             return;
         const scale = St.ThemeContext.get_for_stage(global.stage).scale_factor;

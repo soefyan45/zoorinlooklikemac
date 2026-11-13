@@ -782,6 +782,93 @@ async function waitSettled(notch, maxMs = 8000) {
         await wait(200);
 }
 
+// Two displays (scripts/nested-test.sh with MONITORS=2): the notch follows the pointer, every
+// display keeps a bar and only the notch's is bright, an open panel stays put, "all" mirrors
+// the notch, and an unknown connector falls back to the primary display
+async function testMonitors(extension, shotDir) {
+    const notch = extension.notch;
+    const settings = extension.getSettings();
+    const layout = Main.layoutManager;
+    if (layout.monitors.length < 2) {
+        console.log(LOG_PREFIX, 'monitors: one display, skipped (MONITORS=2 runs it)');
+        return;
+    }
+    const [first, second] = layout.monitors;
+    const {pointer} = virtualDevices();
+    const moveTo = async monitor => {
+        pointer.notify_absolute_motion(GLib.get_monotonic_time(), monitor.x + monitor.width / 2,
+            monitor.y + monitor.height / 2);
+        await wait(500);
+    };
+    const on = monitor => {
+        const [x] = notch.actor.get_transformed_position();
+        const middle = x + notch.actor.width / 2;
+        return middle >= monitor.x && middle < monitor.x + monitor.width;
+    };
+    const workTop = monitor => layout.getWorkAreaForMonitor(monitor.index).y - monitor.y;
+    const stageShot = async file => {
+        const stream = Gio.File.new_for_path(file).replace(null, false, Gio.FileCreateFlags.NONE, null);
+        await new Promise(resolve => new Shell.Screenshot().screenshot_area(0, 0, global.stage.width,
+            global.stage.height, stream, () => resolve()));
+        stream.close(null);
+    };
+    notch.freezePointer(false);
+    try {
+        settings.set_string('bar-mode', 'bar');
+        settings.set_string('notch-monitor', 'cursor');
+        notch.setState(State.IDLE);
+        await moveTo(second);
+        await waitSettled(notch);
+        check('the notch follows the pointer to the second display', on(second),
+            `${notch.actor.get_transformed_position()} ${second.x}`);
+        check('every display has a bar', notch._topBars.length === layout.monitors.length, `${notch._topBars.length}`);
+        check('only the bar of the notch\'s display is bright',
+            notch._topBars.every(bar => bar.active === (bar._monitorIndex === second.index)),
+            notch._topBars.map(bar => `${bar._monitorIndex}:${bar.active}`).join(' '));
+        check('both displays keep the bar\'s room for maximized windows', workTop(first) >= 32 && workTop(second) >= 32,
+            `${workTop(first)} ${workTop(second)}`);
+        if (shotDir)
+            await stageShot(`${shotDir}/monitors-cursor.png`);
+        await moveTo(first);
+        await waitSettled(notch);
+        check('and back to the first display', on(first), `${notch.state} index=${notch._monitorIndex} ` +
+            `pointer=${global.get_pointer().slice(0, 2)} current=${global.display.get_current_monitor()} ` +
+            `x=${notch.actor.get_transformed_position()[0]}`);
+
+        notch.setState(State.PANEL);
+        await waitSettled(notch);
+        await moveTo(second);
+        check('an open panel stays on its display', on(first) && notch.state === State.PANEL, notch.state);
+        notch.setState(State.IDLE);
+        await waitSettled(notch);
+        await moveTo(second);
+        await waitSettled(notch);
+
+        settings.set_string('notch-monitor', 'all');
+        await wait(500);
+        const clone = notch._clones[0]?.actor;
+        const [cx] = clone?.get_transformed_position() ?? [-1];
+        check('all displays: a copy of the notch on the other display', notch._clones.length === 1 &&
+            on(second) && cx >= first.x && cx < first.x + first.width, `${notch._clones.length} ${cx}`);
+        if (shotDir)
+            await stageShot(`${shotDir}/monitors-all.png`);
+
+        settings.set_string('notch-monitor', 'primary');
+        await wait(500);
+        check('primary display: one bar and no copies', notch._topBars.length === 1 && !notch._clones.length &&
+            on(layout.primaryMonitor), `${notch._topBars.length} ${notch._clones.length}`);
+        settings.set_string('notch-monitor', 'NOT-CONNECTED-1');
+        await wait(300);
+        check('a display that is not connected falls back to the primary one', on(layout.primaryMonitor));
+    } finally {
+        settings.reset('notch-monitor');
+        settings.set_string('bar-mode', 'line');
+        await moveTo(first);
+        notch.setState(State.IDLE);
+        await waitSettled(notch);
+    }
+}
+
 async function testLiquid(extension, shotDir) {
     // The language test rebuilt the notch: take the current one
     const notch = extension.notch;
@@ -937,6 +1024,12 @@ async function testSystem(extension, shotDir) {
             `${panel.isOpen} ${panel._view.actor.get_n_children()}`);
         if (shotDir)
             await screenshotFull(`${shotDir}/system-panel-dark.png`);
+        // The power profile buttons, from power-profiles-daemon on the system bus (never pressed here)
+        const power = panel._power;
+        const profiles = panel._view.actor.get_children().find(c => c.has_style_class_name?.('zorin-notch-sys-profiles'));
+        check('the panel shows the power profiles', !power.available || (profiles?.get_n_children() === power.profiles.length &&
+            profiles.get_children().some(b => b.has_style_pseudo_class('checked'))),
+            `${power.available} ${power.active} ${power.profiles}`);
         panel.close();
         await wait(500);
 
@@ -1184,6 +1277,14 @@ export async function runSelfTest(extension) {
         fresh.set_string('bar-mode', 'line');
         await wait(SETTLE_MS);
 
+        // The rest of the test clicks at single-display positions: with two displays
+        // (MONITORS=2) only the display test runs
+        if (Main.layoutManager.monitors.length > 1) {
+            await testMonitors(extension, shotDir);
+            console.log(LOG_PREFIX, 'done');
+            return;
+        }
+
         const notch = extension.notch;
         notch.freezePointer(true);
 
@@ -1262,6 +1363,7 @@ export async function runSelfTest(extension) {
         await testTheme(extension, shotDir);
         await testLiquid(extension, shotDir);
         await testBarModes(extension, shotDir);
+        await testMonitors(extension, shotDir);
         await testSystem(extension, shotDir);
         await testFloatingAndOverview(extension, shotDir);
         await testDockSurvivesTaskbarRestart(extension);

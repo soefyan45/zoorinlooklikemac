@@ -198,6 +198,30 @@
       <default>68</default>
       <summary>CPU temperature (°C) below which the fan goes back to auto</summary>
     </key>
+    <key name="cpu-max-perf" type="i">
+      <range min="20" max="100"/>
+      <default>100</default>
+      <summary>Highest CPU performance in percent (intel_pstate max_perf_pct, through zoorin-fan-boost)</summary>
+    </key>
+    <key name="cpu-turbo" type="b">
+      <default>true</default>
+      <summary>Allow Turbo Boost (through zoorin-fan-boost)</summary>
+    </key>
+    <key name="cpu-epp" type="s">
+      <choices>
+        <choice value="auto"/>
+        <choice value="performance"/>
+        <choice value="balance_performance"/>
+        <choice value="balance_power"/>
+        <choice value="power"/>
+      </choices>
+      <default>'auto'</default>
+      <summary>Energy performance preference of the CPU; auto leaves it to the power profile</summary>
+    </key>
+    <key name="notch-monitor" type="s">
+      <default>'primary'</default>
+      <summary>Where the notch shows: primary, cursor (the monitor with the mouse pointer), all, or a monitor's connector name (e.g. HDMI-1)</summary>
+    </key>
     <key name="bar-mode" type="s">
       <choices>
         <choice value="line"/>

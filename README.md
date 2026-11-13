@@ -121,6 +121,19 @@ sudo ./scripts/install-fan-boost.sh            # install and start
 sudo ./scripts/install-fan-boost.sh --remove   # remove, fan back to auto
 ```
 
+The same service holds the CPU limits from Preferences > Notch > Power: the highest CPU
+performance in percent (intel_pstate `max_perf_pct`), Turbo Boost on or off, and the energy
+preference (EPP; "follow the power profile" leaves it alone). The defaults change nothing, and
+everything goes back to normal when the service stops. The power profile itself (power saver,
+balanced, performance) needs no service: it is in the same group and in the system panel.
+
+### Two displays
+
+Preferences > Dock > General > Show the notch on: the primary display, one display by name, the
+display with the mouse pointer (the notch moves there when it rests), or all displays. When the
+notch follows the pointer with the full menu bar, every display keeps its bar, so maximized
+windows do not jump; the bar of the display without the notch is dimmed, as on macOS.
+
 ## Undo
 
 ```bash

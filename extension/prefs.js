@@ -11,8 +11,9 @@ import Gtk from 'gi://Gtk';
 
 import {ExtensionPreferences} from 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
 
-import {FanBoostConfig, fanServiceInstalled} from './fanboost.js';
+import {FanBoostConfig, cpuControlInstalled, fanServiceInstalled} from './fanboost.js';
 import {LANGUAGES, _, setLanguage} from './i18n.js';
+import {PowerProfiles} from './powerprofile.js';
 
 const THEMES = [
     ['dark', 'Dark'],
@@ -361,6 +362,65 @@ function choiceRow(settings, key, title, subtitle, choices, translate = true) {
     return row;
 }
 
+// Where the notch shows: the primary monitor, the pointer's, all of them, or one by connector
+function monitorChoices(settings) {
+    const choices = [
+        ['primary', _('Primary display')],
+        ['cursor', _('The display with the mouse pointer')],
+        ['all', _('All displays')],
+    ];
+    const monitors = Gdk.Display.get_default().get_monitors();
+    for (let i = 0; i < monitors.get_n_items(); i++) {
+        const monitor = monitors.get_item(i);
+        const connector = monitor.get_connector();
+        if (!connector)
+            continue;
+        const name = [monitor.get_manufacturer(), monitor.get_model()].filter(Boolean).join(' ');
+        choices.push([connector, name ? `${name} (${connector})` : connector]);
+    }
+    // A monitor picked before and not connected now stays in the list
+    const current = settings.get_string('notch-monitor');
+    if (!choices.some(([value]) => value === current))
+        choices.push([current, _('{0} (not connected)', current)]);
+    return choices;
+}
+
+const CPU_EPP = [
+    ['auto', 'Follow the power profile'],
+    ['performance', 'Performance'],
+    ['balance_performance', 'Balanced, faster'],
+    ['balance_power', 'Balanced, cooler'],
+    ['power', 'Power saver'],
+];
+
+const PROFILE_NAMES = {'power-saver': 'Power saver', 'balanced': 'Balanced', 'performance': 'Performance'};
+
+// The power profile of power-profiles-daemon (no root needed)
+function profileRow() {
+    const row = new Adw.ComboRow({
+        title: _('Power profile'),
+        subtitle: _('The same switch as in the quick settings'),
+        sensitive: false,
+    });
+    let names = [];
+    let syncing = false;
+    const power = new PowerProfiles(() => {
+        syncing = true;
+        if (names.join() !== power.profiles.join()) {
+            names = power.profiles;
+            row.model = Gtk.StringList.new(names.map(name => _(PROFILE_NAMES[name])));
+        }
+        row.sensitive = names.length > 1;
+        row.selected = Math.max(0, names.indexOf(power.active));
+        syncing = false;
+    });
+    row.connect('notify::selected', () => {
+        if (!syncing && names[row.selected])
+            power.active = names[row.selected];
+    });
+    return [row, power];
+}
+
 export default class ZorinNotchPreferences extends ExtensionPreferences {
     fillPreferencesWindow(window) {
         const settings = this.getSettings();
@@ -385,6 +445,8 @@ export default class ZorinNotchPreferences extends ExtensionPreferences {
             'Look of the notch and the dock', THEMES));
         general.add(choiceRow(settings, 'accent', 'Accent color',
             'Active toggles, switches and highlights', ACCENT_NAMES));
+        general.add(choiceRow(settings, 'notch-monitor', 'Show the notch on',
+            'With two displays the notch can follow the mouse pointer', monitorChoices(settings), false));
         dock.add(general);
 
         const dockBehavior = new Adw.PreferencesGroup({
@@ -532,7 +594,31 @@ export default class ZorinNotchPreferences extends ExtensionPreferences {
         }
         // Write at once from here too: the running shell may still have older extension code
         const fanConfig = new FanBoostConfig(settings);
-        window.connect('close-request', () => fanConfig.destroy());
+
+        // Power: the profile (no root), and limits of the CPU through the same root service
+        const cpuReady = cpuControlInstalled();
+        const power = new Adw.PreferencesGroup({title: _('Power'),
+            description: cpuReady
+                ? _('CPU limits apply within seconds and go back to normal when the service stops')
+                : _('The CPU limits need the fan service, installed or updated once: sudo ./scripts/install-fan-boost.sh')});
+        const [profile, profiles] = profileRow();
+        power.add(profile);
+        const cpuRows = [
+            spinRow(settings, 'cpu-max-perf', 'Highest CPU performance',
+                'Percent of the top speed; lower runs cooler and quieter', {lower: 20, upper: 100, step: 5}),
+            switchRow(settings, 'cpu-turbo', 'Turbo Boost',
+                'Off: much cooler, less speed at the peak'),
+            choiceRow(settings, 'cpu-epp', 'Energy preference',
+                'How eagerly the CPU speeds up', CPU_EPP),
+        ];
+        cpuRows.forEach(row => {
+            row.sensitive = cpuReady;
+            power.add(row);
+        });
+        window.connect('close-request', () => {
+            fanConfig.destroy();
+            profiles.destroy();
+        });
 
         // Detail panel: three style cards and the chart color
         const panelGroup = new Adw.PreferencesGroup({title: _('Detail panel style'),
@@ -566,6 +652,7 @@ export default class ZorinNotchPreferences extends ExtensionPreferences {
         notch.add(panelGroup);
         notch.add(chartGroup);
         notch.add(fan);
+        notch.add(power);
         notch.add(notchBehavior);
         notch.add(notchLook);
         window.add(notch);

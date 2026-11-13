@@ -194,8 +194,11 @@ export class Notch {
             return GLib.SOURCE_CONTINUE;
         });
 
+        this._topBars = [];
+        this._clones = [];
+        this._monitorIndex = this._targetMonitor();
         Main.layoutManager.addTopChrome(this.actor);
-        Main.layoutManager.connectObject('monitors-changed', () => this._relayout(), this);
+        Main.layoutManager.connectObject('monitors-changed', () => this._syncMonitor(true), this);
         global.display.connectObject('in-fullscreen-changed', () => this._syncFullscreen(), this);
         St.ThemeContext.get_for_stage(global.stage).connectObject(
             'notify::scale-factor', () => this._relayout(), this);
@@ -205,6 +208,107 @@ export class Notch {
         this.onThemeChanged();
         this._buildSystem();
         this._syncTopBar();
+        this._syncClones();
+    }
+
+    // Which monitor shows the notch (Preferences > Notch > Show the notch on): the primary one,
+    // one picked by its connector, or the one with the mouse pointer ("cursor"; "all" also
+    // mirrors the notch on the other monitors)
+    _monitorChoice() {
+        return this._settings?.get_string('notch-monitor') ?? 'primary';
+    }
+
+    _followsPointer() {
+        const choice = this._monitorChoice();
+        return choice === 'cursor' || choice === 'all';
+    }
+
+    _targetMonitor() {
+        const layout = Main.layoutManager;
+        if (this._followsPointer()) {
+            // From the pointer itself: Mutter's "current monitor" can lag behind it
+            const [px, py] = global.get_pointer();
+            const under = layout.monitors.find(m =>
+                px >= m.x && px < m.x + m.width && py >= m.y && py < m.y + m.height);
+            return under?.index ?? this._monitorIndex ?? layout.primaryIndex;
+        }
+        const choice = this._monitorChoice();
+        if (choice !== 'primary') {
+            const index = global.backend.get_monitor_manager().get_monitor_for_connector(choice);
+            if (index >= 0 && layout.monitors[index])
+                return index;
+        }
+        return layout.primaryIndex;
+    }
+
+    _monitor() {
+        const layout = Main.layoutManager;
+        return layout.monitors[this._monitorIndex] ?? layout.primaryMonitor;
+    }
+
+    // Move the notch, the bars' active state and the mirrors to the target monitor
+    _syncMonitor(force = false) {
+        const index = this._targetMonitor();
+        if (index === this._monitorIndex && !force)
+            return;
+        this._monitorIndex = index;
+        this._box = null;
+        this._relayout();
+        this._syncFullscreen();
+        this._syncTopBar();
+        this._syncClones();
+    }
+
+    // "all": a copy of the notch on every other monitor. The copies only show the notch (it moves
+    // to the pointer's monitor before it can be touched there), so they take no input.
+    _syncClones() {
+        const layout = Main.layoutManager;
+        const others = this._monitorChoice() === 'all'
+            ? layout.monitors.filter(m => m.index !== this._monitorIndex) : [];
+        while (this._clones.length > others.length) {
+            const clone = this._clones.pop();
+            layout.removeChrome(clone.actor);
+            clone.actor.destroy();
+        }
+        while (this._clones.length < others.length) {
+            const actor = new Clutter.Clone({source: this.actor});
+            layout.addTopChrome(actor, {affectsInputRegion: false, trackFullscreen: true});
+            this._clones.push({actor, monitor: -1});
+        }
+        others.forEach((m, i) => (this._clones[i].monitor = m.index));
+        this._restack();
+        this._placeClones();
+    }
+
+    _placeClones() {
+        if (!this._box || !this._clones?.length)
+            return;
+        const offset = this._box.top - this._monitor().y;
+        for (const clone of this._clones) {
+            const m = Main.layoutManager.monitors[clone.monitor];
+            if (m)
+                clone.actor.set_position(m.x + Math.round((m.width - this._box.width) / 2), Math.round(m.y + offset));
+        }
+    }
+
+    // The notch (and its copies) above the bars, which they are drawn over
+    _restack() {
+        const parent = this.actor.get_parent();
+        if (!parent)
+            return;
+        for (const bar of this._topBars) {
+            if (bar.actor.get_parent() === parent)
+                parent.set_child_above_sibling(this.actor, bar.actor);
+        }
+        for (const clone of this._clones) {
+            if (clone.actor.get_parent() === parent)
+                parent.set_child_above_sibling(clone.actor, this.actor);
+        }
+    }
+
+    // The bar of the notch's monitor (the self test looks at it)
+    get _topBar() {
+        return this._topBars?.find(bar => bar.active) ?? this._topBars?.[0] ?? null;
     }
 
     // System info (Pego "Bar sistem"): the numbers, and the detail panel a click opens
@@ -245,7 +349,7 @@ export class Notch {
         const info = this._systemInfo();
         this._statusRow.updateSystem(info);
         this._panelView.statusRow.updateSystem(info);
-        this._topBar?.updateSystem(info);
+        this._topBars.forEach(bar => bar.updateSystem(info));
         this._systemPanel?.update();
         // The status row makes room for the CPU info
         const shown = this._systemShown();
@@ -278,29 +382,41 @@ export class Notch {
         return choice === 'always';
     }
 
+    // While the notch follows the pointer every monitor has a bar, so maximized windows never
+    // jump when the pointer changes monitors; the bars without the notch are dimmed (macOS)
     _syncTopBar() {
         const mode = this._barMode();
-        if (mode !== BarMode.BAR && mode !== BarMode.ISLANDS) {
-            this._topBar?.destroy();
-            this._topBar = null;
-            return;
-        }
-        if (this._topBar) {
-            this._topBar.setMode(mode);
-        } else {
-            this._topBar = new TopBar(mode, {
+        const monitors = mode !== BarMode.BAR && mode !== BarMode.ISLANDS ? []
+            : this._followsPointer() ? Main.layoutManager.monitors.map(m => m.index) : [this._monitorIndex];
+        while (this._topBars.length > monitors.length)
+            this._topBars.pop().destroy();
+        let added = false;
+        while (this._topBars.length < monitors.length) {
+            this._topBars.push(new TopBar(mode, {
                 toggleOverview: () => Main.overview.toggle(),
-                openPanel: () => this.setState(State.PANEL),
-                openList: () => this.setState(State.LIST),
+                openPanel: () => this._openFromBar(State.PANEL),
+                openList: () => this._openFromBar(State.LIST),
                 openSystem: anchor => this._systemPanel.open(anchor),
-            });
+            }, monitors[this._topBars.length]));
+            added = true;
+        }
+        this._topBars.forEach((bar, i) => {
+            bar.setMonitor(monitors[i]);
+            bar.setMode(mode);
+            bar.setActive(monitors[i] === this._monitorIndex);
+        });
+        if (added) {
             this._syncStatus();
             this._onSystemChanged();
         }
-        // The notch is drawn over the middle of the bar
-        const parent = this.actor.get_parent();
-        if (parent && parent === this._topBar.actor.get_parent())
-            parent.set_child_above_sibling(this.actor, this._topBar.actor);
+        this._restack();
+    }
+
+    // A click on a dimmed bar opens the notch on that bar's monitor
+    _openFromBar(state) {
+        if (this._followsPointer())
+            this._syncMonitor();
+        this.setState(state);
     }
 
     _buildActors() {
@@ -445,7 +561,7 @@ export class Notch {
         this._panelView.statusRow.update({clock: panelDateText(clock), networkIcon, battery});
         this._wifiView.statusRow.update({clock, networkIcon, battery});
         this._listView.statusRow.update({clock, networkIcon, battery});
-        this._topBar?.update({time: clock, networkIcon, battery});
+        this._topBars?.forEach(bar => bar.update({time: clock, networkIcon, battery}));
     }
 
     _syncViews() {
@@ -772,6 +888,10 @@ export class Notch {
             if (this._state === State.PEEK && !this._hoverStatus())
                 this.setState(State.IDLE);
             break;
+        case 'notch-monitor':
+            this.setState(State.IDLE);
+            this._syncMonitor(true);
+            break;
         case 'bar-mode':
             this._syncTopBar();
             this.setState(State.IDLE);
@@ -1000,11 +1120,15 @@ export class Notch {
     }
 
     _pollPointer() {
-        if (this._pointerFrozen || !this.actor.visible ||
-            this._state === State.STATUS || EXPANDED.has(this._state))
+        if (this._pointerFrozen || this._state === State.STATUS || EXPANDED.has(this._state))
+            return;
+        // An open notch stays where it is; a resting one goes to the pointer's monitor
+        if (this._followsPointer())
+            this._syncMonitor();
+        if (!this.actor.visible)
             return;
 
-        const monitor = Main.layoutManager.primaryMonitor;
+        const monitor = this._monitor();
         if (!monitor)
             return;
 
@@ -1134,7 +1258,7 @@ export class Notch {
     // recompute the chrome input region and reallocate the Cairo surface on each frame, which is
     // what made the animation stutter. It shrinks to fit once the springs settle.
     _relayout() {
-        const monitor = Main.layoutManager.primaryMonitor;
+        const monitor = this._monitor();
         if (!monitor)
             return;
 
@@ -1161,6 +1285,7 @@ export class Notch {
         this.actor.set_size(width, height);
         this.actor.set_position(monitor.x + Math.round((monitor.width - width) / 2), Math.round(top));
         this._area.set_size(width, height);
+        this._placeClones();
 
         const rowWidth = Math.round((this._sizeOf(State.STATUS)[0] - 2 * STATUS_ROW_INSET) * scale);
         for (const row of [this._statusRow.actor, this._activityRow.actor, this._mediaRow.actor]) {
@@ -1221,7 +1346,7 @@ export class Notch {
     }
 
     _syncFullscreen() {
-        const visible = !Main.layoutManager.primaryMonitor?.inFullscreen;
+        const visible = !this._monitor()?.inFullscreen;
         this.actor.visible = visible;
         this._holdUnredirect(visible);
     }
@@ -1243,8 +1368,13 @@ export class Notch {
     }
 
     destroy() {
-        this._topBar?.destroy();
-        this._topBar = null;
+        this._topBars.forEach(bar => bar.destroy());
+        this._topBars = [];
+        this._clones.forEach(clone => {
+            Main.layoutManager.removeChrome(clone.actor);
+            clone.actor.destroy();
+        });
+        this._clones = [];
         this._systemPanel?.destroy();
         this._system?.destroy();
         this._systemPanel = this._system = null;

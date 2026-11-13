@@ -3,6 +3,11 @@
 # "full" (asus-wmi pwm1_enable: 2 = auto, 0 = full speed; no custom fan curves, e.g. Zenbook 14).
 # At ON °C or more the fan runs at full speed; below OFF °C it goes back to the firmware's auto
 # mode. Runs as root from zoorin-fan-boost.service.
+# It also holds the CPU limits from Preferences > Notch > Power (intel_pstate): CPU_MAX=percent
+# of the top speed (max_perf_pct), TURBO=0|1, EPP=auto|performance|balance_performance|
+# balance_power|power (energy_performance_preference; auto leaves it to the power profile).
+# They are written again every round (a power profile change resets the EPP) and put back to
+# normal when the service stops.
 #
 # Settings: CONFIG (/etc/zoorin-fan-boost/fan.conf), owned by the desktop user so the
 # Zoorinlooklikemac preferences can change them: ENABLED=0|1, ON=°C, OFF=°C, INTERVAL=seconds,
@@ -10,7 +15,7 @@
 # which jumps by 20 °C within seconds, does not switch it on and off every few seconds).
 # Read again every round, so changes apply at once. The file is parsed, never sourced: only
 # those keys with whole numbers in a safe range are taken, anything else is ignored.
-# FAN_FILE, TEMP_FILE and CONFIG override the paths (for trying it out without root).
+# FAN_FILE, TEMP_FILE, CPU_DIR and CONFIG override the paths (for trying it out without root).
 set -u
 
 CONFIG="${CONFIG:-/etc/zoorin-fan-boost/fan.conf}"
@@ -19,14 +24,25 @@ ON=75
 OFF=68
 INTERVAL=2
 HOLD=60
+CPU_MAX=100
+TURBO=1
+EPP=auto
 AUTO=2
 FULL=0
+CPU_DIR="${CPU_DIR:-/sys/devices/system/cpu}"
+PSTATE="$CPU_DIR/intel_pstate"
 
 # KEY=number lines of the config, each checked against its range
 read_config() {
     [[ -r "$CONFIG" ]] || return 0
     local key value
     while IFS='=' read -r key value; do
+        if [[ "$key" == EPP ]]; then
+            case "$value" in
+                auto|performance|balance_performance|balance_power|power) EPP=$value ;;
+            esac
+            continue
+        fi
         [[ "$value" =~ ^[0-9]+$ ]] || continue
         case "$key" in
             ENABLED) (( value <= 1 )) && ENABLED=$value ;;
@@ -34,6 +50,8 @@ read_config() {
             OFF) (( value >= 40 && value <= 99 )) && OFF=$value ;;
             INTERVAL) (( value >= 1 && value <= 30 )) && INTERVAL=$value ;;
             HOLD) (( value >= 0 && value <= 600 )) && HOLD=$value ;;
+            CPU_MAX) (( value >= 20 && value <= 100 )) && CPU_MAX=$value ;;
+            TURBO) (( value <= 1 )) && TURBO=$value ;;
         esac
     done < "$CONFIG"
     # Back to auto only below the full speed mark
@@ -62,23 +80,71 @@ package_temp() {
 
 FAN_FILE="${FAN_FILE:-$(hwmon asus)/pwm1_enable}"
 TEMP_FILE="${TEMP_FILE:-$(package_temp)}"
+have_fan=1
 if [[ ! -w "$FAN_FILE" || ! -r "$TEMP_FILE" ]]; then
+    have_fan=0
     echo "zoorin-fan-boost: no ASUS fan control or CPU temperature here ($FAN_FILE, $TEMP_FILE)" >&2
-    exit 1
 fi
+have_cpu=0
+[[ -w "$PSTATE/max_perf_pct" ]] && have_cpu=1
+(( have_fan || have_cpu )) || exit 1
+
+# A sysfs value, written only when it differs
+put() {
+    [[ -w "$1" ]] || return 0
+    [[ "$(cat "$1" 2>/dev/null)" == "$2" ]] || echo "$2" > "$1" 2>/dev/null
+}
+
+epp_files() {
+    for file in "$CPU_DIR"/cpu[0-9]*/cpufreq/energy_performance_preference; do
+        [[ -w "$file" ]] && echo "$file"
+    done
+}
+
+# The EPP the power profile had set before it was overridden, put back for "auto"
+epp_saved=""
+applied=""
+apply_cpu() {
+    (( have_cpu )) || return 0
+    local want="$CPU_MAX/$TURBO/$EPP"
+    [[ "$want" == "$applied" ]] || echo "zoorin-fan-boost: CPU up to ${CPU_MAX}%, turbo $(( TURBO )), energy preference $EPP"
+    applied="$want"
+    put "$PSTATE/max_perf_pct" "$CPU_MAX"
+    put "$PSTATE/no_turbo" "$(( TURBO ? 0 : 1 ))"
+    local file
+    if [[ "$EPP" != auto ]]; then
+        if [[ -z "$epp_saved" ]]; then
+            file="$(epp_files | head -1)"
+            [[ -n "$file" ]] && epp_saved="$(cat "$file")"
+        fi
+        for file in $(epp_files); do put "$file" "$EPP"; done
+    elif [[ -n "$epp_saved" ]]; then
+        for file in $(epp_files); do put "$file" "$epp_saved"; done
+        epp_saved=""
+    fi
+}
 
 restore() {
-    echo "$AUTO" > "$FAN_FILE" 2>/dev/null
+    (( have_fan )) && echo "$AUTO" > "$FAN_FILE" 2>/dev/null
+    if (( have_cpu )); then
+        CPU_MAX=100 TURBO=1 EPP=auto
+        apply_cpu >/dev/null
+    fi
 }
 trap 'restore; exit 0' TERM INT
 trap restore EXIT
 
 read_config
-echo "zoorin-fan-boost: full speed from ${ON}°C, auto below ${OFF}°C (enabled: $ENABLED)"
+(( have_fan )) && echo "zoorin-fan-boost: full speed from ${ON}°C, auto below ${OFF}°C (enabled: $ENABLED)"
 full=0
 full_since=0
 while true; do
     read_config
+    apply_cpu
+    if (( !have_fan )); then
+        sleep "$INTERVAL"
+        continue
+    fi
     temp=$(( $(cat "$TEMP_FILE") / 1000 ))
     if (( !ENABLED )); then
         (( full )) && echo "zoorin-fan-boost: switched off, fan back to auto"

@@ -31,11 +31,12 @@ cleanup() {
 }
 trap cleanup EXIT
 
-echo "nested shell $SIZE, log: $LOG_FILE"
+echo "nested shell $SIZE x ${MONITORS:-1}, log: $LOG_FILE"
 
 XDG_CONFIG_HOME="$SANDBOX/config" \
 XDG_DATA_HOME="$SANDBOX/data" \
 MUTTER_DEBUG_DUMMY_MODE_SPECS="$SIZE" \
+MUTTER_DEBUG_NUM_DUMMY_MONITORS="${MONITORS:-1}" \
 ZORIN_NOTCH_DRY_RUN=1 \
 ZORIN_NOTCH_REPO="$REPO_DIR" \
 ZORIN_NOTCH_TRACE="${TRACE:-}" \
