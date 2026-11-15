@@ -782,6 +782,38 @@ async function waitSettled(notch, maxMs = 8000) {
         await wait(200);
 }
 
+// The glass of the bar (Preferences > Menu bar): tint and transparency, blur, dark text on
+// light glass, solid when asked, and the islands painted the same
+async function testBarLook(extension, shotDir) {
+    const notch = extension.notch;
+    const settings = extension.getSettings();
+    try {
+        settings.set_string('bar-mode', 'bar');
+        await wait(800);
+        const bar = notch._topBar;
+        check('the bar is painted from the glass settings', bar.actor.style?.includes('rgba(11, 15, 26, 0.480)') &&
+            !!bar.actor.get_effect('zorin-notch-glass'), bar.actor.style);
+        settings.set_string('bar-tint', '#F5F5F5');
+        settings.set_int('bar-transparency', 30);
+        await wait(300);
+        check('light glass gets dark text', bar.actor.has_style_class_name('dark-text'));
+        if (shotDir)
+            await screenshotFull(`${shotDir}/bar-frost.png`);
+        settings.set_boolean('bar-reduce-transparency', true);
+        await wait(300);
+        check('reduce transparency: solid, no blur', bar.actor.style?.includes('1.000)') &&
+            !bar.actor.get_effect('zorin-notch-glass'), bar.actor.style);
+        settings.set_string('bar-mode', 'islands');
+        await wait(500);
+        check('the islands get the same glass', !bar.actor.style && bar.statusGroup.style?.includes('245, 245, 245'),
+            `${bar.actor.style} ${bar.statusGroup.style}`);
+    } finally {
+        ['bar-tint', 'bar-transparency', 'bar-reduce-transparency'].forEach(key => settings.reset(key));
+        settings.set_string('bar-mode', 'line');
+        await wait(300);
+    }
+}
+
 // Two displays (scripts/nested-test.sh with MONITORS=2): the notch follows the pointer, every
 // display keeps a bar and only the notch's is bright, an open panel stays put, "all" mirrors
 // the notch, and an unknown connector falls back to the primary display
@@ -1363,6 +1395,7 @@ export async function runSelfTest(extension) {
         await testTheme(extension, shotDir);
         await testLiquid(extension, shotDir);
         await testBarModes(extension, shotDir);
+        await testBarLook(extension, shotDir);
         await testMonitors(extension, shotDir);
         await testSystem(extension, shotDir);
         await testFloatingAndOverview(extension, shotDir);

@@ -218,6 +218,47 @@
       <default>'auto'</default>
       <summary>Energy performance preference of the CPU; auto leaves it to the power profile</summary>
     </key>
+    <key name="bar-glass" type="s">
+      <choices>
+        <choice value="clear"/>
+        <choice value="frost"/>
+        <choice value="dark"/>
+        <choice value="wallpaper"/>
+      </choices>
+      <default>'dark'</default>
+      <summary>Glass style of the top bar: clear, frost, dark, or tinted from the wallpaper</summary>
+    </key>
+    <key name="bar-tint" type="s">
+      <default>'#0B0F1A'</default>
+      <summary>Tint of the top bar's glass (#RRGGBB)</summary>
+    </key>
+    <key name="bar-transparency" type="i">
+      <range min="0" max="100"/>
+      <default>52</default>
+      <summary>Transparency of the top bar in percent (0 = solid)</summary>
+    </key>
+    <key name="bar-blur" type="i">
+      <range min="0" max="40"/>
+      <default>24</default>
+      <summary>Blur of the wallpaper behind the top bar, in pixels</summary>
+    </key>
+    <key name="bar-edge" type="i">
+      <range min="0" max="30"/>
+      <default>8</default>
+      <summary>Opacity of the line under the top bar in percent (0 = none)</summary>
+    </key>
+    <key name="bar-solid-maximized" type="b">
+      <default>true</default>
+      <summary>Solid top bar while a maximized window is on its display</summary>
+    </key>
+    <key name="bar-reduce-transparency" type="b">
+      <default>false</default>
+      <summary>Always solid top bar, for easier reading</summary>
+    </key>
+    <key name="bar-auto-text" type="b">
+      <default>true</default>
+      <summary>Dark text on light glass (frost, white)</summary>
+    </key>
     <key name="notch-monitor" type="s">
       <default>'primary'</default>
       <summary>Where the notch shows: primary, cursor (the monitor with the mouse pointer), all, or a monitor's connector name (e.g. HDMI-1)</summary>

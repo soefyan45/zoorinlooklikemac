@@ -6,11 +6,14 @@
 import Adw from 'gi://Adw';
 import Cairo from 'cairo';
 import Gdk from 'gi://Gdk';
+import GdkPixbuf from 'gi://GdkPixbuf';
 import Gio from 'gi://Gio';
+import GLib from 'gi://GLib';
 import Gtk from 'gi://Gtk';
 
 import {ExtensionPreferences} from 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
 
+import {GLASS_STYLES, LOOK_KEYS, TINTS, barLook, parseHex, wallpaperFile} from './barlook.js';
 import {FanBoostConfig, cpuControlInstalled, fanServiceInstalled} from './fanboost.js';
 import {LANGUAGES, _, setLanguage} from './i18n.js';
 import {PowerProfiles} from './powerprofile.js';
@@ -46,6 +49,8 @@ const CARD_CSS = `
 .zn-card-title { font-weight: 600; }
 .zn-swatch { padding: 4px; min-width: 0; min-height: 0; border-radius: 999px; }
 .zn-swatch:checked { box-shadow: inset 0 0 0 2px @accent_bg_color; }
+.zn-value { font-weight: 700; padding: 2px 8px; border-radius: 6px; background: alpha(currentColor, 0.08); }
+.zn-preview { border-radius: 12px; }
 `;
 
 function rgba(hex, alpha = 1) {
@@ -421,6 +426,265 @@ function profileRow() {
     return [row, power];
 }
 
+// A whole-number key as a slider with its value and the two ends named below
+function sliderRow(settings, key, title, {min, max, unit, minLabel, maxLabel}) {
+    const row = new Adw.PreferencesRow({activatable: false});
+    const box = new Gtk.Box({orientation: Gtk.Orientation.VERTICAL, spacing: 4,
+        margin_top: 12, margin_bottom: 10, margin_start: 12, margin_end: 12});
+    const head = new Gtk.Box({spacing: 12});
+    head.append(new Gtk.Label({label: _(title), xalign: 0, hexpand: true, css_classes: ['zn-card-title']}));
+    const value = new Gtk.Label({css_classes: ['zn-value']});
+    head.append(value);
+    const scale = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, min, max, 1);
+    scale.draw_value = false;
+    const ends = new Gtk.Box();
+    ends.append(new Gtk.Label({label: _(minLabel), xalign: 0, hexpand: true, css_classes: ['dim-label', 'caption']}));
+    ends.append(new Gtk.Label({label: _(maxLabel), xalign: 1, css_classes: ['dim-label', 'caption']}));
+    box.append(head);
+    box.append(scale);
+    box.append(ends);
+    row.set_child(box);
+    const sync = () => {
+        const v = settings.get_int(key);
+        if (Math.round(scale.get_value()) !== v)
+            scale.set_value(v);
+        value.label = `${v}${unit}`;
+    };
+    sync();
+    scale.connect('value-changed', () => {
+        const v = Math.round(scale.get_value());
+        if (settings.get_int(key) !== v)
+            settings.set_int(key, v);
+    });
+    settings.connect(`changed::${key}`, sync);
+    return row;
+}
+
+const GLASS_CARDS = [
+    {value: 'clear', title: 'Clear', subtitle: 'Thin tint, blur 12 px', strip: ['#0B0F1A', 0.2]},
+    {value: 'frost', title: 'Frost', subtitle: 'Milky white, blur 30 px', strip: ['#F5F5F5', 0.7]},
+    {value: 'dark', title: 'Dark', subtitle: 'Graphite tint, blur 24 px', strip: ['#0B0F1A', 0.48]},
+    {value: 'wallpaper', title: 'Follow wallpaper', subtitle: 'Color taken from the wallpaper', strip: ['#5A321C', 0.55]},
+];
+
+// The user's wallpaper, scaled to cover w x h, or null
+let previewPicture = {path: null, pixbuf: null};
+function wallpaperPixbuf() {
+    const path = wallpaperFile();
+    if (path !== previewPicture.path) {
+        let pixbuf = null;
+        try {
+            pixbuf = path ? GdkPixbuf.Pixbuf.new_from_file_at_scale(path, 1280, -1, true) : null;
+        } catch (_e) {
+            pixbuf = null;
+        }
+        previewPicture = {path, pixbuf};
+    }
+    return previewPicture.pixbuf;
+}
+
+function drawPicture(cr, pixbuf, w, h, blur = 0) {
+    if (!pixbuf) {
+        previewWallpaper(cr, w, h, true);
+        return;
+    }
+    const scale = Math.max(w / pixbuf.get_width(), h / pixbuf.get_height());
+    // A blur: shrink the picture and let Cairo stretch it back smoothly
+    const shrink = blur > 0 ? 1 + blur / 3 : 1;
+    const small = pixbuf.scale_simple(Math.max(1, Math.round(pixbuf.get_width() * scale / shrink)),
+        Math.max(1, Math.round(pixbuf.get_height() * scale / shrink)), GdkPixbuf.InterpType.BILINEAR);
+    cr.save();
+    cr.scale(shrink, shrink);
+    Gdk.cairo_set_source_pixbuf(cr, small, (w / shrink - small.get_width()) / 2, 0);
+    cr.getSource().setFilter(Cairo.Filter.BILINEAR);
+    cr.paint();
+    cr.restore();
+}
+
+function previewText(cr, text, x, y, color, bold = false, align = 'left') {
+    cr.selectFontFace('Inter', Cairo.FontSlant.NORMAL, bold ? Cairo.FontWeight.BOLD : Cairo.FontWeight.NORMAL);
+    cr.setFontSize(12);
+    const extents = cr.textExtents(text);
+    cr.moveTo(align === 'right' ? x - extents.xAdvance : x, y);
+    cr.setSourceRGBA(...color);
+    cr.showText(text);
+    return extents.xAdvance;
+}
+
+// Live preview of the bar on the user's wallpaper
+function drawBarPreview(cr, w, h, settings) {
+    const look = barLook(settings);
+    const pixbuf = wallpaperPixbuf();
+    roundRect(cr, 0, 0, w, h, 12);
+    cr.clip();
+    drawPicture(cr, pixbuf, w, h);
+    const barH = 32;
+    cr.save();
+    cr.rectangle(0, 0, w, barH);
+    cr.clip();
+    drawPicture(cr, pixbuf, w, h, look.blur);
+    cr.restore();
+    cr.rectangle(0, 0, w, barH);
+    cr.setSourceRGBA(...look.color.map(v => v / 255), look.alpha);
+    cr.fill();
+    if (look.edge > 0) {
+        cr.rectangle(0, barH - 1, w, 1);
+        cr.setSourceRGBA(1, 1, 1, look.edge);
+        cr.fill();
+    }
+    const ink = look.darkText ? [0.06, 0.05, 0.07, 1] : [1, 1, 1, 1];
+    let x = 18;
+    x += previewText(cr, _('Files'), x, 21, ink, true) + 22;
+    previewText(cr, _('Activities'), x, 21, ink, true);
+    const now = GLib.DateTime.new_now_local();
+    previewText(cr, now.format('%a %-d %b  %H.%M'), w - 14, 21, ink, true, 'right');
+
+    // The caption
+    const glass = GLASS_CARDS.find(card => card.value === settings.get_string('bar-glass'));
+    const tint = TINTS.find(([hex]) => hex === settings.get_string('bar-tint').toUpperCase());
+    const caption = `${_('Live preview')} · ${_(glass?.title ?? '')}` +
+        (settings.get_string('bar-glass') === 'wallpaper' ? '' : `, ${tint ? _(tint[1]).toLowerCase() : settings.get_string('bar-tint')}`) +
+        `, ${_('{0}% transparent', Math.round((1 - look.alpha) * 100))}`;
+    cr.selectFontFace('Inter', Cairo.FontSlant.NORMAL, Cairo.FontWeight.BOLD);
+    cr.setFontSize(12);
+    const width = cr.textExtents(caption).xAdvance + 20;
+    roundRect(cr, 16, h - 44, width, 26, 6);
+    cr.setSourceRGBA(0.11, 0.11, 0.13, 0.94);
+    cr.fillPreserve();
+    cr.setSourceRGBA(1, 1, 1, 0.18);
+    cr.setLineWidth(1);
+    cr.stroke();
+    previewText(cr, caption, 26, h - 26, [1, 1, 1, 1], true);
+}
+
+// Menu bar (Pego "Preferences · tampilan Menu bar"): the glass of the top bar on every display,
+// with the islands
+function menuBarPage(settings) {
+    const page = new Adw.PreferencesPage({title: _('Menu bar'), icon_name: 'view-top-pane-symbolic'});
+
+    const previewGroup = new Adw.PreferencesGroup();
+    const preview = new Gtk.DrawingArea({content_height: 132, hexpand: true, css_classes: ['zn-preview']});
+    preview.set_draw_func((_area, cr, w, h) => {
+        try {
+            drawBarPreview(cr, w, h, settings);
+        } finally {
+            cr.$dispose();
+        }
+    });
+    LOOK_KEYS.forEach(key => settings.connect(`changed::${key}`, () => preview.queue_draw()));
+    previewGroup.add(preview);
+    page.add(previewGroup);
+
+    // Glass style: picking one sets its tint, transparency and blur (the sliders fine-tune them)
+    let pickingTint = false;
+    settings.connect('changed::bar-glass', () => {
+        if (pickingTint)
+            return;
+        const preset = GLASS_STYLES[settings.get_string('bar-glass')];
+        if (!preset)
+            return;
+        if (preset.tint)
+            settings.set_string('bar-tint', preset.tint);
+        settings.set_int('bar-transparency', preset.transparency);
+        settings.set_int('bar-blur', preset.blur);
+    });
+    const glassGroup = new Adw.PreferencesGroup({title: _('Glass style'),
+        description: _('How the bar shows the wallpaper behind it')});
+    const pixbuf = wallpaperPixbuf();
+    const firstRow = cardPicker(settings, 'bar-glass', GLASS_CARDS.map(card => ({...card, draw: (cr, w, h) => {
+        roundRect(cr, 0, 0, w, h, 8);
+        cr.clip();
+        drawPicture(cr, pixbuf, w, h);
+        cr.rectangle(0, 0, w, 16);
+        cr.setSourceRGBA(...rgba(card.strip[0], card.strip[1]));
+        cr.fill();
+        const ink = card.value === 'frost' ? [0.06, 0.05, 0.07, 0.7] : [1, 1, 1, 0.9];
+        roundRect(cr, 8, 6, 30, 3, 1.5);
+        cr.setSourceRGBA(...ink);
+        cr.fill();
+        roundRect(cr, w - 38, 6, 30, 3, 1.5);
+        cr.fill();
+    }})));
+    glassGroup.add(firstRow);
+    page.add(glassGroup);
+
+    // Tint: swatches and a custom color
+    const tintGroup = new Adw.PreferencesGroup({title: _('Glass color'),
+        description: _('Base color that tints the glass of the bar')});
+    const swatchRow = new Adw.ActionRow({title: _('Color')});
+    const swatches = swatchPicker(settings, 'bar-tint', TINTS.map(([hex, name]) => ({
+        value: hex, title: name, colors: () => [hex],
+    })));
+    swatchRow.add_suffix(swatches);
+    tintGroup.add(swatchRow);
+    const custom = new Adw.EntryRow({title: _('Custom (#RRGGBB)'), show_apply_button: true,
+        text: settings.get_string('bar-tint')});
+    const dialogButton = new Gtk.ColorDialogButton({dialog: new Gtk.ColorDialog({with_alpha: false}),
+        valign: Gtk.Align.CENTER});
+    const toRgba = hex => {
+        const color = new Gdk.RGBA();
+        color.parse(hex);
+        return color;
+    };
+    dialogButton.rgba = toRgba(settings.get_string('bar-tint'));
+    custom.add_suffix(dialogButton);
+    const setTint = hex => {
+        const rgb = parseHex(hex);
+        if (!rgb)
+            return;
+        const value = `#${hex.replace('#', '').toUpperCase()}`;
+        // A color of its own leaves "follow wallpaper" without resetting the sliders
+        if (settings.get_string('bar-glass') === 'wallpaper') {
+            pickingTint = true;
+            settings.set_string('bar-glass', 'dark');
+            pickingTint = false;
+        }
+        if (settings.get_string('bar-tint') !== value)
+            settings.set_string('bar-tint', value);
+    };
+    custom.connect('apply', () => setTint(custom.text.trim()));
+    dialogButton.connect('notify::rgba', () => {
+        const {red, green, blue} = dialogButton.rgba;
+        const hex = `#${[red, green, blue].map(v => Math.round(v * 255).toString(16).padStart(2, '0')).join('')}`;
+        setTint(hex);
+    });
+    settings.connect('changed::bar-tint', () => {
+        const hex = settings.get_string('bar-tint');
+        if (custom.text !== hex)
+            custom.text = hex;
+        if (!toRgba(hex).equal(dialogButton.rgba))
+            dialogButton.rgba = toRgba(hex);
+    });
+    tintGroup.add(custom);
+    page.add(tintGroup);
+
+    const effects = new Adw.PreferencesGroup({title: _('Transparency and effects'),
+        description: _('Slide to set how see-through the bar is')});
+    effects.add(sliderRow(settings, 'bar-transparency', 'Transparency',
+        {min: 0, max: 100, unit: '%', minLabel: '0% · solid', maxLabel: '100% · clear'}));
+    effects.add(sliderRow(settings, 'bar-blur', 'Background blur',
+        {min: 0, max: 40, unit: ' px', minLabel: '0 px · sharp', maxLabel: '40 px · blurred'}));
+    effects.add(sliderRow(settings, 'bar-edge', 'Bottom edge line',
+        {min: 0, max: 30, unit: '%', minLabel: 'No line', maxLabel: '30%'}));
+    effects.add(switchRow(settings, 'bar-solid-maximized', 'Solid with a maximized window',
+        'The bar turns solid while a window is maximized'));
+    effects.add(switchRow(settings, 'bar-reduce-transparency', 'Reduce transparency',
+        'The bar is always solid so the text is easier to read'));
+    effects.add(switchRow(settings, 'bar-auto-text', 'Automatic text color',
+        'Dark text when the glass is light, such as Frost or White'));
+    page.add(effects);
+
+    const footer = new Adw.PreferencesGroup({
+        description: _('Changes apply at once to the bar on every display, including the notch and the glass islands.'),
+    });
+    const reset = new Gtk.Button({child: new Adw.ButtonContent({icon_name: 'edit-undo-symbolic', label: _('Restore defaults')}),
+        valign: Gtk.Align.CENTER});
+    reset.connect('clicked', () => LOOK_KEYS.forEach(key => settings.reset(key)));
+    footer.set_header_suffix(reset);
+    page.add(footer);
+    return page;
+}
+
 export default class ZorinNotchPreferences extends ExtensionPreferences {
     fillPreferencesWindow(window) {
         const settings = this.getSettings();
@@ -435,9 +699,8 @@ export default class ZorinNotchPreferences extends ExtensionPreferences {
             Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION);
         window.title = 'Zorin Notch';
 
-        // Dock
-        const dock = new Adw.PreferencesPage({title: 'Dock', icon_name: 'view-app-grid-symbolic'});
-
+        // General: language, look, and where the notch shows
+        const generalPage = new Adw.PreferencesPage({title: _('General'), icon_name: 'emblem-system-symbolic'});
         const general = new Adw.PreferencesGroup({title: _('General')});
         general.add(choiceRow(settings, 'language', 'Language',
             'Language of the notch and this window; the window updates when reopened', LANGUAGES, false));
@@ -447,7 +710,11 @@ export default class ZorinNotchPreferences extends ExtensionPreferences {
             'Active toggles, switches and highlights', ACCENT_NAMES));
         general.add(choiceRow(settings, 'notch-monitor', 'Show the notch on',
             'With two displays the notch can follow the mouse pointer', monitorChoices(settings), false));
-        dock.add(general);
+        generalPage.add(general);
+        window.add(generalPage);
+
+        // Dock
+        const dock = new Adw.PreferencesPage({title: 'Dock', icon_name: 'view-app-grid-symbolic'});
 
         const dockBehavior = new Adw.PreferencesGroup({
             title: _('Behavior'),
@@ -656,5 +923,6 @@ export default class ZorinNotchPreferences extends ExtensionPreferences {
         notch.add(notchBehavior);
         notch.add(notchLook);
         window.add(notch);
+        window.add(menuBarPage(settings));
     }
 }

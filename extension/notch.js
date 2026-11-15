@@ -397,7 +397,7 @@ export class Notch {
                 openPanel: () => this._openFromBar(State.PANEL),
                 openList: () => this._openFromBar(State.LIST),
                 openSystem: anchor => this._systemPanel.open(anchor),
-            }, monitors[this._topBars.length]));
+            }, monitors[this._topBars.length], this._settings));
             added = true;
         }
         this._topBars.forEach((bar, i) => {

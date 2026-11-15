@@ -671,6 +671,22 @@
     background-color: rgba(11, 15, 26, 0.48);
 }
 
+/* Light glass (frost, white): dark text (Preferences > Menu bar) */
+.zorin-notch-topbar.dark-text,
+.zorin-notch-topbar.dark-text .zorin-notch-topbar-icon,
+.zorin-notch-topbar.dark-text .zorin-notch-topbar-app,
+.zorin-notch-topbar.dark-text .zorin-notch-topbar-text,
+.zorin-notch-topbar.dark-text .zorin-notch-topbar-date,
+.zorin-notch-topbar.dark-text .zorin-notch-topbar-time,
+.zorin-notch-topbar.islands.dark-text .zorin-notch-topbar-date,
+.zorin-notch-topbar.islands.dark-text .zorin-notch-topbar-time {
+    color: #0F0E12;
+}
+
+.zorin-notch-topbar.dark-text .zorin-notch-topbar-group:hover {
+    background-color: rgba(0, 0, 0, 0.08);
+}
+
 .zorin-notch-topbar-right {
     spacing: 16px;
 }
