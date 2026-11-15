@@ -17,6 +17,7 @@ import {GLASS_STYLES, LOOK_KEYS, TINTS, barLook, parseHex, wallpaperFile} from '
 import {FanBoostConfig, cpuControlInstalled, fanServiceInstalled} from './fanboost.js';
 import {LANGUAGES, _, setLanguage} from './i18n.js';
 import {PowerProfiles} from './powerprofile.js';
+import {CALENDAR_CHOICES, WEATHER_CHOICES} from './widgetchoices.js';
 
 const THEMES = [
     ['dark', 'Dark'],
@@ -51,6 +52,9 @@ const CARD_CSS = `
 .zn-swatch:checked { box-shadow: inset 0 0 0 2px @accent_bg_color; }
 .zn-value { font-weight: 700; padding: 2px 8px; border-radius: 6px; background: alpha(currentColor, 0.08); }
 .zn-preview { border-radius: 12px; }
+.zn-option { padding: 10px 12px; border-radius: 12px; background: alpha(currentColor, 0.05); }
+.zn-option:checked { box-shadow: inset 0 0 0 2px @accent_bg_color; }
+.zn-option-icon { padding: 6px; border-radius: 8px; background: alpha(currentColor, 0.08); }
 `;
 
 function rgba(hex, alpha = 1) {
@@ -685,11 +689,110 @@ function menuBarPage(settings) {
     return page;
 }
 
+// Style options in two columns: icon, title, line below, and a check on the picked one
+// (Pego "Pilihan Gaya Widget")
+function optionGrid(settings, key, choices) {
+    const grid = new Gtk.FlowBox({max_children_per_line: 2, min_children_per_line: 2, homogeneous: true,
+        selection_mode: Gtk.SelectionMode.NONE, column_spacing: 10, row_spacing: 10, margin_top: 4});
+    const buttons = new Map();
+    let first = null;
+    for (const [value, title, subtitle, iconName] of choices) {
+        const check = new Gtk.Image({icon_name: 'object-select-symbolic', valign: Gtk.Align.CENTER});
+        const content = new Gtk.Box({spacing: 10});
+        content.append(new Gtk.Image({icon_name: iconName, pixel_size: 16, css_classes: ['zn-option-icon'],
+            valign: Gtk.Align.CENTER}));
+        const words = new Gtk.Box({orientation: Gtk.Orientation.VERTICAL, hexpand: true, valign: Gtk.Align.CENTER});
+        words.append(new Gtk.Label({label: _(title), xalign: 0, css_classes: ['zn-card-title']}));
+        words.append(new Gtk.Label({label: _(subtitle), xalign: 0, wrap: true, css_classes: ['dim-label', 'caption']}));
+        content.append(words);
+        content.append(check);
+        const button = new Gtk.ToggleButton({child: content, css_classes: ['zn-option']});
+        if (first)
+            button.set_group(first);
+        else
+            first = button;
+        button.connect('toggled', () => {
+            check.opacity = button.active ? 1 : 0;
+            if (button.active && settings.get_string(key) !== value)
+                settings.set_string(key, value);
+        });
+        check.opacity = 0;
+        buttons.set(value, button);
+        grid.append(button);
+    }
+    const sync = () => buttons.get(settings.get_string(key))?.set_active(true);
+    sync();
+    settings.connect(`changed::${key}`, sync);
+    return grid;
+}
+
+function locationServicesOn() {
+    try {
+        return new Gio.Settings({schema_id: 'org.gnome.system.location'}).get_boolean('enabled');
+    } catch (_e) {
+        return false;
+    }
+}
+
+// Widget (Pego "Preferences · gaya widget desktop"): the styles of the desktop widgets
+function widgetPage(settings) {
+    const page = new Adw.PreferencesPage({title: _('Widget'), icon_name: 'view-grid-symbolic'});
+    const weather = new Adw.PreferencesGroup({title: _('Weather widget style'),
+        description: _('Data for the current location from Open-Meteo, updated every 15 minutes')});
+    weather.add(optionGrid(settings, 'widget-weather', WEATHER_CHOICES));
+    page.add(weather);
+    const calendar = new Adw.PreferencesGroup({title: _('Calendar widget style'),
+        description: _('Events from GNOME Calendar, including online accounts such as Google')});
+    calendar.add(optionGrid(settings, 'widget-calendar', CALENDAR_CHOICES));
+    page.add(calendar);
+
+    const options = new Adw.PreferencesGroup();
+    const unitRow = new Adw.ActionRow({title: _('Temperature unit'), subtitle: _('Used in every weather style')});
+    const units = new Gtk.Box({css_classes: ['linked'], valign: Gtk.Align.CENTER});
+    let firstUnit = null;
+    for (const [value, label] of [['c', '°C'], ['f', '°F']]) {
+        const toggle = new Gtk.ToggleButton({label});
+        if (firstUnit)
+            toggle.set_group(firstUnit);
+        else
+            firstUnit = toggle;
+        toggle.active = settings.get_string('weather-unit') === value;
+        toggle.connect('toggled', () => {
+            if (toggle.active)
+                settings.set_string('weather-unit', value);
+        });
+        units.append(toggle);
+    }
+    unitRow.add_suffix(units);
+    options.add(unitRow);
+    options.add(switchRow(settings, 'weather-auto-location', 'Automatic location',
+        locationServicesOn() ? 'The weather follows the location of this device'
+            : 'GNOME location services are off: the city below is used'));
+    const city = new Adw.EntryRow({title: _('City (when the location is not automatic)'), show_apply_button: true,
+        text: settings.get_string('weather-city')});
+    city.connect('apply', () => settings.set_string('weather-city', city.text.trim()));
+    options.add(city);
+    options.add(switchRow(settings, 'widgets-on-top', 'Show above windows',
+        'Off: the widgets show only on the empty desktop'));
+    page.add(options);
+
+    const footer = new Adw.PreferencesGroup({
+        description: _('Styles apply on the desktop at once. Right-click a widget on the desktop to change its style without opening Preferences.'),
+    });
+    const reset = new Gtk.Button({child: new Adw.ButtonContent({icon_name: 'edit-undo-symbolic', label: _('Restore defaults')}),
+        valign: Gtk.Align.CENTER});
+    reset.connect('clicked', () => ['widget-weather', 'widget-calendar', 'widgets-on-top', 'weather-unit',
+        'weather-auto-location'].forEach(key => settings.reset(key)));
+    footer.set_header_suffix(reset);
+    page.add(footer);
+    return page;
+}
+
 export default class ZorinNotchPreferences extends ExtensionPreferences {
     fillPreferencesWindow(window) {
         const settings = this.getSettings();
         setLanguage(settings.get_string('language'));
-        window.set_default_size(720, 820);
+        window.set_default_size(900, 860);
         const css = new Gtk.CssProvider();
         if (css.load_from_string)
             css.load_from_string(CARD_CSS);
@@ -924,5 +1027,6 @@ export default class ZorinNotchPreferences extends ExtensionPreferences {
         notch.add(notchLook);
         window.add(notch);
         window.add(menuBarPage(settings));
+        window.add(widgetPage(settings));
     }
 }

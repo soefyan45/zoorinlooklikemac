@@ -259,6 +259,51 @@
       <default>true</default>
       <summary>Dark text on light glass (frost, white)</summary>
     </key>
+    <key name="widget-weather" type="s">
+      <choices>
+        <choice value="full"/>
+        <choice value="sun-arc"/>
+        <choice value="big"/>
+        <choice value="strip"/>
+        <choice value="hidden"/>
+      </choices>
+      <default>'full'</default>
+      <summary>Style of the weather widget on the desktop</summary>
+    </key>
+    <key name="widget-calendar" type="s">
+      <choices>
+        <choice value="full"/>
+        <choice value="agenda"/>
+        <choice value="week-arc"/>
+        <choice value="glass-month"/>
+        <choice value="meetings"/>
+        <choice value="mono"/>
+        <choice value="tear-off"/>
+        <choice value="hidden"/>
+      </choices>
+      <default>'full'</default>
+      <summary>Style of the calendar widget on the desktop</summary>
+    </key>
+    <key name="widgets-on-top" type="b">
+      <default>false</default>
+      <summary>Show the desktop widgets above the windows (off: only on the empty desktop)</summary>
+    </key>
+    <key name="weather-unit" type="s">
+      <choices>
+        <choice value="c"/>
+        <choice value="f"/>
+      </choices>
+      <default>'c'</default>
+      <summary>Temperature unit of the weather widget</summary>
+    </key>
+    <key name="weather-auto-location" type="b">
+      <default>true</default>
+      <summary>Weather for the device's location (GNOME location services)</summary>
+    </key>
+    <key name="weather-city" type="s">
+      <default>''</default>
+      <summary>City for the weather when the location is not automatic or not available</summary>
+    </key>
     <key name="notch-monitor" type="s">
       <default>'primary'</default>
       <summary>Where the notch shows: primary, cursor (the monitor with the mouse pointer), all, or a monitor's connector name (e.g. HDMI-1)</summary>

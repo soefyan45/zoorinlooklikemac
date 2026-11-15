@@ -127,9 +127,30 @@ preference (EPP; "follow the power profile" leaves it alone). The defaults chang
 everything goes back to normal when the service stops. The power profile itself (power saver,
 balanced, performance) needs no service: it is in the same group and in the system panel.
 
+### Menu bar glass
+
+Preferences > Menu bar sets the look of the top bar (full bar and glass islands, on every display):
+glass style (clear, frost, dark, or tinted from the wallpaper), tint color, transparency, background
+blur and the line under the bar, with a live preview on your wallpaper. The bar can turn solid while
+a window is maximized, always stay solid, and switch to dark text on light glass.
+
+### Desktop widgets
+
+A calendar on the left and the weather on the right of the desktop, under the windows. Pick their
+styles in Preferences > Widget or with a right click on a widget: the weather as full (hourly,
+5 days), sun arc, big temperature or date strip; the calendar as full (month, agenda and two small
+tiles), agenda blocks, week arc, glass month, today's meetings, black and white, or tear-off.
+Either can be hidden, or both shown above the windows.
+
+- Calendar: GNOME's calendar server, the same as the clock's menu (local calendars and online
+  accounts such as Google added in Settings > Online Accounts).
+- Weather: [Open-Meteo](https://open-meteo.com), free and without an account; only the coordinates
+  are sent, every 15 minutes while a weather widget is shown. The place is the device's location
+  when GNOME's location services are on, else the city typed in Preferences > Widget.
+
 ### Two displays
 
-Preferences > Dock > General > Show the notch on: the primary display, one display by name, the
+Preferences > General > Show the notch on: the primary display, one display by name, the
 display with the mouse pointer (the notch moves there when it rests), or all displays. When the
 notch follows the pointer with the full menu bar, every display keeps its bar, so maximized
 windows do not jump; the bar of the display without the notch is dimmed, as on macOS.

@@ -7,6 +7,7 @@ import {FanBoostConfig} from './fanboost.js';
 import {setLanguage} from './i18n.js';
 import {Notch} from './notch.js';
 import {ThemeManager} from './theme.js';
+import {DesktopWidgets} from './widgets.js';
 
 const LOG_PREFIX = '[zorin-notch]';
 
@@ -19,6 +20,10 @@ let selfTestStarted = false;
 export default class ZorinNotchExtension extends Extension {
     get notch() {
         return this._notch;
+    }
+
+    get widgets() {
+        return this._widgets;
     }
 
     enable() {
@@ -55,6 +60,16 @@ export default class ZorinNotchExtension extends Extension {
             this._dockZoom = null;
         }
 
+        try {
+            this._widgets = new DesktopWidgets(this._settings, {
+                dryRun: DRY_RUN,
+                openPreferences: () => this.openPreferences(),
+            });
+        } catch (e) {
+            console.error(LOG_PREFIX, 'failed to set up the desktop widgets', e);
+            this._widgets = null;
+        }
+
         if (SELFTEST && !selfTestStarted) {
             selfTestStarted = true;
             import('./devtools.js')
@@ -88,6 +103,8 @@ export default class ZorinNotchExtension extends Extension {
         this._dockZoom = null;
         this._fanBoost?.destroy();
         this._fanBoost = null;
+        this._widgets?.destroy();
+        this._widgets = null;
         this._destroyNotch();
         this._theme?.destroy();
         this._theme = null;

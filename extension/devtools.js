@@ -814,6 +814,55 @@ async function testBarLook(extension, shotDir) {
     }
 }
 
+// Desktop widgets (sample data in the test session): every style draws, the right click menu
+// switches styles, they sit under the windows and can be put above them
+async function testWidgets(extension, shotDir) {
+    const widgets = extension.widgets;
+    const settings = extension.getSettings();
+    check('the desktop widgets are there', !!widgets);
+    if (!widgets)
+        return;
+    const {CALENDAR_CHOICES, WEATHER_CHOICES} = await import('./widgets.js');
+    try {
+        const calendars = CALENDAR_CHOICES.map(([v]) => v).filter(v => v !== 'hidden');
+        const weathers = WEATHER_CHOICES.map(([v]) => v).filter(v => v !== 'hidden');
+        for (let i = 0; i < Math.max(calendars.length, weathers.length); i++) {
+            const calendar = calendars[i] ?? 'full';
+            const weather = weathers[i] ?? 'full';
+            settings.set_string('widget-calendar', calendar);
+            settings.set_string('widget-weather', weather);
+            await wait(400);
+            const ok = !!widgets._calendarBin.child && !!widgets._weatherBin.child &&
+                widgets._calendarBin.child.width === 344 && widgets._weatherBin.child.width === 344;
+            check(`widget styles draw: ${calendar} + ${weather}`, ok,
+                `${widgets._calendarBin.child?.width} ${widgets._weatherBin.child?.width}`);
+            if (shotDir)
+                await screenshotFull(`${shotDir}/widgets-${calendar}-${weather}.png`);
+        }
+        const group = global.window_group;
+        const kids = group.get_children();
+        check('the widgets sit on the desktop, above the wallpaper', widgets._calendarBin.get_parent() === group &&
+            kids.indexOf(widgets._calendarBin) > kids.indexOf(Main.layoutManager._backgroundGroup));
+        const menu = widgets.openMenu('calendar', widgets._calendarBin);
+        await wait(300);
+        check('a right click opens the style menu', menu.isOpen && menu.numMenuItems >= CALENDAR_CHOICES.length);
+        menu.close();
+        await wait(300);
+        settings.set_boolean('widgets-on-top', true);
+        await wait(300);
+        check('they can be put above the windows', widgets._calendarBin.get_parent() !== group);
+        settings.set_string('widget-calendar', 'hidden');
+        settings.set_string('widget-weather', 'hidden');
+        await wait(300);
+        check('both can be hidden', !widgets._calendarBin.visible && !widgets._weatherBin.visible);
+    } finally {
+        settings.reset('widgets-on-top');
+        settings.set_string('widget-calendar', 'hidden');
+        settings.set_string('widget-weather', 'hidden');
+        await wait(300);
+    }
+}
+
 // Two displays (scripts/nested-test.sh with MONITORS=2): the notch follows the pointer, every
 // display keeps a bar and only the notch's is bright, an open panel stays put, "all" mirrors
 // the notch, and an unknown connector falls back to the primary display
@@ -1307,10 +1356,21 @@ export async function runSelfTest(extension) {
         check('a new install shows the full menu bar', fresh.get_string('bar-mode') === 'bar' &&
             !!extension.notch._topBar && topBars === 1, `${fresh.get_string('bar-mode')} bars=${topBars}`);
         fresh.set_string('bar-mode', 'line');
+        // The desktop widgets would take the test's clicks on the desktop: off until their test
+        check('new installs show the full calendar and weather widgets', fresh.get_string('widget-calendar') === 'full' &&
+            fresh.get_string('widget-weather') === 'full' && !!extension.widgets?._calendarBin.child);
+        fresh.set_string('widget-calendar', 'hidden');
+        fresh.set_string('widget-weather', 'hidden');
         await wait(SETTLE_MS);
 
         // The rest of the test clicks at single-display positions: with two displays
         // (MONITORS=2) only the display test runs
+        // SELFTEST=widgets: only the desktop widgets (quick look at their styles)
+        if (GLib.getenv('ZORIN_NOTCH_SELFTEST') === 'widgets') {
+            await testWidgets(extension, shotDir);
+            console.log(LOG_PREFIX, 'done');
+            return;
+        }
         if (Main.layoutManager.monitors.length > 1) {
             await testMonitors(extension, shotDir);
             console.log(LOG_PREFIX, 'done');
@@ -1396,6 +1456,7 @@ export async function runSelfTest(extension) {
         await testLiquid(extension, shotDir);
         await testBarModes(extension, shotDir);
         await testBarLook(extension, shotDir);
+        await testWidgets(extension, shotDir);
         await testMonitors(extension, shotDir);
         await testSystem(extension, shotDir);
         await testFloatingAndOverview(extension, shotDir);

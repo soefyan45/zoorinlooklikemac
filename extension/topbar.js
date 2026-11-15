@@ -120,7 +120,7 @@ export class TopBar {
         Main.layoutManager.connectObject('monitors-changed', () => this._place(), this);
         Shell.WindowTracker.get_default().connectObject('notify::focus-app', () => this._syncApp(), this);
         // The glass (Preferences > Menu bar), solid while a maximized window is on this display
-        this._settings?.connectObject(...LOOK_KEYS.flatMap(key => [`changed::${key}`, () => this._queueLook()]), this);
+        this._settings?.connectObject(...LOOK_KEYS.flatMap(key => [`changed::${key}`, () => this._applyLook()]), this);
         global.window_manager.connectObject(
             'size-changed', () => this._queueLook(),
             'minimize', () => this._queueLook(),
