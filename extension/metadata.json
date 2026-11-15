@@ -1,10 +1,10 @@
 {
   "uuid": "zoorinlooklikemac@soefyan45.github.io",
   "name": "Zoorinlooklikemac",
-  "description": "Mac-style notch and dock for Zorin OS: the notch replaces the top bar (status, quick settings, notifications, power, music, coding agents) and the dock gets zoom and glass.",
+  "description": "A macOS feel for Zorin OS: a living notch, a menu bar or glass islands with system info, a glass dock, calendar and weather widgets on the desktop, and one Preferences window for all of it.",
   "shell-version": [
     "46"
   ],
-  "version-name": "0.2.1",
+  "version-name": "0.3.0",
   "settings-schema": "org.gnome.shell.extensions.zoorinlooklikemac"
 }

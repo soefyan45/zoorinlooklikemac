@@ -1365,6 +1365,18 @@ export async function runSelfTest(extension) {
 
         // The rest of the test clicks at single-display positions: with two displays
         // (MONITORS=2) only the display test runs
+        // SELFTEST=hero: the README's picture (glass islands with system info, widgets, dock)
+        if (GLib.getenv('ZORIN_NOTCH_SELFTEST') === 'hero') {
+            fresh.set_string('bar-mode', 'islands');
+            fresh.set_strv('system-items', ['cpu-load', 'cpu-temp']);
+            fresh.set_string('widget-calendar', 'full');
+            fresh.set_string('widget-weather', 'full');
+            await wait(3000);
+            if (shotDir)
+                await screenshotFull(`${shotDir}/hero.png`);
+            console.log(LOG_PREFIX, 'done');
+            return;
+        }
         // SELFTEST=widgets: only the desktop widgets (quick look at their styles)
         if (GLib.getenv('ZORIN_NOTCH_SELFTEST') === 'widgets') {
             await testWidgets(extension, shotDir);
